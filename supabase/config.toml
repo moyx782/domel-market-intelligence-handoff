@@ -1,0 +1,4 @@
+project_id = "domel-market-intelligence"
+[functions.research]
+# Platform validates JWT; handler also verifies current user with Auth getUser.
+verify_jwt = true
