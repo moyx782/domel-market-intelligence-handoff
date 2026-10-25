@@ -14,7 +14,7 @@ Never commit `.env`, database passwords, service-role keys or DeepSeek keys. Fro
 ## Current features and limits
 
 - Connected research workflow, real Supabase authentication and saved projects.
-- Free-text research focus: 1–5 fields, one per line.
+- Free-text research focus: 1�C5 fields, one per line.
 - Data sources navigation: team presets intentionally empty. Users can add/remove preferred HTTPS page URLs. Preferences are stored per account in the current browser and prefill new research. This is not cloud preference synchronisation or website-wide search configuration.
 - Backend source collection and optional DeepSeek Search/Fetch adapter. Source links, retrieval times and original excerpts remain visible. Search summaries are not evidence.
 - Finding review/audit and approved-only report code; real AI extraction needs separate model configuration and end-to-end acceptance.
@@ -35,3 +35,8 @@ Backend-only secrets: DEEPSEEK_API_KEY for Search/Fetch; optional AI_BASE_URL, A
 ## Team workflow
 
 See CONTRIBUTING.md. Each member uses an individual branch and submits a pull request. Never force-push shared main or share production credentials through GitHub.
+
+
+
+## Week 6 update — 2026-10-25
+DeepSeek model extraction, saved-source continuation, backend readiness checking and review evidence exports are implemented locally. Typecheck/build and 32 tests pass. No hosted deployment or paid API acceptance is claimed. The detailed current configuration and deployment instructions in [WEEK6_ACCEPTANCE.md](WEEK6_ACCEPTANCE.md) and [DEEPSEEK_WEEK6_SETUP.md](DEEPSEEK_WEEK6_SETUP.md) supersede older setup notes. The new review migration must be deployed separately; do not repeat the initial schema migration.

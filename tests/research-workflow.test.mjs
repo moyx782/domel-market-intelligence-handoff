@@ -32,3 +32,26 @@ test('execution budget stops further retrieval and records incomplete coverage',
  let time=0;const h=harness({now:()=>time,fetchSource:async url=>{time=90000;return {url,published_at:null};}});
  const r=await collectResearch({source_urls:[...p.source_urls,'https://example.com/second']},h.io);assert.equal(r.sources,1);assert.match(r.errors.join(' '),/Execution time limit/);
 });
+import {extractSavedResearch,validateSavedExtraction} from '../supabase/functions/_shared/research-workflow.mjs';
+
+test('saved-source extraction preserves provenance and never retrieves or reinserts sources',async()=>{
+ const saved=[{id:'saved-1',project_id:'p',url:'https://example.com/news',text:'Previously retrieved source text',retrieved_at:'2026-10-20T00:00:00Z',published_at:'2026-08-01'}];
+ const stages=[];
+ const h=harness({aiReady:true,stage:async s=>stages.push(s),discover:async()=>{throw Error('Must not search');},fetchSource:async()=>{throw Error('Must not fetch');},saveSource:async()=>{throw Error('Must not insert');},extract:async(p,s)=>{assert.equal(s.id,'saved-1');assert.equal(s.retrieved_at,'2026-10-20T00:00:00Z');return [{text:'Candidate'}];}});
+ const r=await extractSavedResearch({id:'p',source_urls:[],errors:['Source collection only. AI extraction has not run; old status.']},saved,h.io);
+ assert.equal(r.findings,1);assert.equal(r.status,'completed');assert.equal(h.batches[0].id,'saved-1');assert.equal(h.saved.length,0);assert.match(stages[0],/Reading saved source/);assert.equal(h.results.length,1);
+});
+test('saved-source extraction keeps previous coverage failures and handles provider failure honestly',async()=>{
+ const saved=[{id:'s',project_id:'p',url:'https://example.com',text:'Saved text',published_at:null}];
+ const h=harness({aiReady:true,extract:async()=>{throw Error('HTTP 402');}});
+ const r=await extractSavedResearch({id:'p',errors:['One original URL failed']},saved,h.io);
+ assert.equal(r.status,'partial');assert.equal(r.sources,1);assert.equal(r.findings,0);assert.match(r.errors.join(' '),/Prior collection notice: One original URL failed/);assert.match(r.errors.join(' '),/HTTP 402/);assert.equal(h.batches.length,0);
+});
+test('resume rules reject running projects, missing sources, cross-project sources and existing findings',()=>{
+ const p={id:'p',status:'partial'},sources=[{id:'s',project_id:'p'}];
+ assert.doesNotThrow(()=>validateSavedExtraction(p,sources,[]));
+ assert.throws(()=>validateSavedExtraction({...p,status:'running'},sources,[]),/Finish source collection/);
+ assert.throws(()=>validateSavedExtraction(p,[],[]),/No saved sources/);
+ assert.throws(()=>validateSavedExtraction(p,[{project_id:'other'}],[]),/does not belong/);
+ assert.throws(()=>validateSavedExtraction(p,sources,[{id:'existing'}]),/already has candidate/);
+});

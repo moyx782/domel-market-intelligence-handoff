@@ -6,6 +6,7 @@ test('PostgreSQL ownership, review reset, audit and immutable reports',async()=>
  const db=new PGlite();
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
  await db.exec(await readFile(new URL('../supabase/migrations/202610140001_initial.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610250001_review_evidence_guard.sql',import.meta.url),'utf8'));
  const u='00000000-0000-4000-8000-000000000001',v='00000000-0000-4000-8000-000000000002',p='00000000-0000-4000-8000-000000000003',s='00000000-0000-4000-8000-000000000004',f='00000000-0000-4000-8000-000000000005';
  await db.exec(`insert into auth.users values('${u}'),('${v}');insert into projects(id,owner_id,title,question,segment,market,quarter,competitors,focus) values('${p}','${u}','Test','Question','Motor','EU','2026-Q3',array['A'],array['Technology']);insert into sources(id,project_id,url,title,text,competitor) values('${s}','${p}','https://example.com','Evidence','Actual source passage for testing','A');insert into findings(id,project_id,source_id,competitor,field,original_text,edited_text,quote) values('${f}','${p}','${s}','A','Technology','Original','Original','Actual source passage for testing');`);
  await db.exec(`set role authenticated;set request.jwt.claim.sub='${v}';`);
@@ -25,6 +26,8 @@ test('PostgreSQL ownership, review reset, audit and immutable reports',async()=>
  await assert.rejects(db.query(`select public.generate_report('${p}')`),/Accept at least one/);
  await assert.rejects(db.query(`select public.review_finding('${f}','Edited','accepted',2)`),/finding changed/);
  await assert.rejects(db.query('delete from reports'),/permission denied/);
+ await db.exec("reset role;update sources set text='Evidence no longer matches';set role authenticated;set request.jwt.claim.sub='"+u+"';");
+ await assert.rejects(db.query(`select public.review_finding('${f}','Edited','accepted',3)`),/Supporting source/);
  await db.exec('reset role;set role anon;');
  await assert.rejects(db.query('select * from projects'),/permission denied/);
  await assert.rejects(db.query(`select public.generate_report('${p}')`),/permission denied/);

@@ -23,7 +23,7 @@ export async function createProject(p:Omit<Project,'id'|'created_at'|'updated_at
  if(demo){const b=readDemo();b.projects.unshift(row);saveDemo(b);return row;}
  const {data,error}=await supabase!.from('projects').insert(row).select().single();if(error)throw error;return data as Project;
 }
-export async function runResearch(id:string,demo:boolean,mode:'collect'|'research'='collect'){
+export async function runResearch(id:string,demo:boolean,mode:'collect'|'research'|'extract'='collect'){
  if(demo){const b=readDemo(),p=b.projects.find(p=>p.id===id)!;p.status='completed';p.stage='Demo workflow completed';p.errors=['Demo mode does not perform web retrieval or AI extraction. This new project has no findings. Connect the live backend to run research.'];saveDemo(b);return;}
  const {data,error}=await supabase!.functions.invoke('research',{body:{project_id:id,mode}});if(error){let detail='Research request failed. Check the deployed function and its allowed origin.';try{const body=await error.context?.json();if(body?.error)detail=body.error;}catch{}throw Error(detail);}if(data?.error)throw Error(data.error);
 }
@@ -34,4 +34,11 @@ export async function review(id:string,text:string,decision:Decision,actor:strin
 export async function generateReport(id:string,demo:boolean):Promise<Report>{
  if(demo){const b=readDemo(),p=b.projects.find(p=>p.id===id)!;if(!b.findings.some(f=>f.project_id===id&&f.decision==='accepted'))throw Error('Accept at least one finding before generating a report.');const row={id:uid(),project_id:id,version:b.reports.filter(r=>r.project_id===id).length+1,created_at:new Date().toISOString(),snapshot:reportSnapshot(p,b.findings,b.sources)};b.reports.unshift(row);saveDemo(b);return row;}
  const {data,error}=await supabase!.rpc('generate_report',{p_project:id});if(error)throw error;return data as Report;
+}
+
+export async function backendCapabilities(){
+ if(!supabase)throw Error('Supabase is not configured.');
+ const {data,error}=await supabase.functions.invoke('research',{body:{mode:'capabilities'}});
+ if(error||!data?.version)throw Error('Backend check unavailable. Deploy the Week 6 research function and check your session.');
+ return data as {version:string;ai:boolean;search:boolean;allowed_domains:string[];max_sources:number};
 }

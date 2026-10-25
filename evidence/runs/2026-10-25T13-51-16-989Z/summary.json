@@ -1,0 +1,81 @@
+{
+  "capturedAt": "2026-10-25T13:51:22.225Z",
+  "runtime": "v24.21.0",
+  "platform": "win32",
+  "results": [
+    {
+      "name": "typecheck",
+      "command": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "-b"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-25T13:51:16.991Z"
+    },
+    {
+      "name": "build",
+      "command": [
+        "node",
+        "node_modules/vite/bin/vite.js",
+        "build"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-25T13:51:18.203Z"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "node",
+        "--test",
+        "tests/ai-extraction.test.mjs",
+        "tests/auth-flow.test.mjs",
+        "tests/database.test.mjs",
+        "tests/deepseek-search.test.mjs",
+        "tests/research-validation.test.mjs",
+        "tests/research-workflow.test.mjs",
+        "tests/rules.test.mjs"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-25T13:51:20.914Z"
+    }
+  ],
+  "sourceSha256": {
+    "src/accessibility.css": "5c7043fc7223960e815fb5a096fade64682fc9e310543070a9f2dbea58838678",
+    "src/App.tsx": "ffeea63aed25c097140b19e937ee017f73225ce1861870b7d48ff17d6d2d30ee",
+    "src/auth-flow.mjs": "8134dae2a474e350241c19d234816702692f06b541c0ddc2d8ce3df7fbe2ecac",
+    "src/AuthPanel.tsx": "2e64920b98e627e325f4cd2613e471013462462345f6570fa80e54a33ef51e9c",
+    "src/data.ts": "2a9e14233db761d66b0e67a014d79fc17f45439761967d5ec523a0b29b967965",
+    "src/DataSources.tsx": "6ef73d5fb12f8831ecad6452473d7b3b92d0a5cf1cb3bcf53c9b08a22d66c90a",
+    "src/demo.ts": "d30822f7365f0c8da1917fd1d94c3e1ad13fe060deb6a7d7add020196d827bde",
+    "src/main.tsx": "7f5f6d4c26cb48f732b8b06ff0921788986cb77d1ace9a83dc3ed5cf46f8302e",
+    "src/rules.mjs": "1d8bada7412964c0cd813191c711cd3afbe562c129d677082fa61131645c574f",
+    "src/source-library.css": "a941ffa09b907b86f64504c3931507d5e0433f61f206f13c8c48dfe531048a6c",
+    "src/SourceLibrary.tsx": "eb8df5ec08e8a29511b9987eaf4ba3eef175ca550245e9968082a3d230ba9f72",
+    "src/style.css": "aed97f96bb84062f3afb88309d4dcf7a34c82fd1ffef2030453b9423d0b75224",
+    "src/types.ts": "82a63e3cd95698bf4bc1edc74fa2ec610b0c55d34579fdd92df66c196f14d4c0",
+    "src/vite-env.d.ts": "424faf9241dd699dda995b367ed36665732da1e6ec1f33b2fd40394488ecac92",
+    "supabase/config.toml": "d92d17978bc8ee5f691db9d12b20d3bb06c9017da2f2f3002da0d5f3594017bf",
+    "supabase/dashboard/index.ts": "84e660944e491f69f35ee13b9522d278cac1223e87682c3237785c1d4c17749e",
+    "supabase/functions/research/index.ts": "e11313f395913256ef1d780d98c554b9ac600696241c4c104b479028e2ec1697",
+    "supabase/functions/_shared/ai-extraction.mjs": "4a47bba9f1e024b7563d89398a2b9a7fd0da73d2aa1971cca1e879cc2eba037c",
+    "supabase/functions/_shared/deepseek-search.mjs": "6f47daea6f694e7a687b2dd07b13b78d87ef41536cea1ab0220bdff19a9e3d3d",
+    "supabase/functions/_shared/research-validation.mjs": "35792f91f77932c1b9cc2b8856d17ba96c2581aef4260b13649a4fbc210d83e6",
+    "supabase/functions/_shared/research-workflow.mjs": "401283b8e191fb9f167088b91ef6c41e2501eb65cbfca83010ff7888d098f9eb",
+    "supabase/migrations/202610140001_initial.sql": "13c61e92fc17af2fb709b5754d5fee0ca0ca8bad57ea51365b4ddaee7b20a605",
+    "supabase/migrations/202610250001_review_evidence_guard.sql": "6b3289cb6a5a2f259ae2c77e715419b6656dfff433ff8f8c514ddd4edf1ed915",
+    "tests/ai-extraction.test.mjs": "96a8378e711a4b1858ef2fc70b2aa0ffba097d84cdeffc616498d63b496ccbed",
+    "tests/auth-flow.test.mjs": "f73f2113e7239642d91deff42d2a06ad5660adaf062433a6a8d2d37e5f5a2a86",
+    "tests/database.test.mjs": "40a33ad397ccacbfc5156d4fe2c7cd7ba0b0e1c924bb190ca11be1680deb419c",
+    "tests/deepseek-search.test.mjs": "ed58dc55bceaab61600d96881070a72de2982999d5f8245fabe63608b919d85e",
+    "tests/research-validation.test.mjs": "85ae97c51a6fc4cc38a06631887434605118c0dd042616380e88480aa5956465",
+    "tests/research-workflow.test.mjs": "2821f5d440d331d40c870e3d04e64091b172a64c3cd13264baff2248ff3df1bd",
+    "tests/rules.test.mjs": "a5f0bfe4ea5e6885c92c769927ce3223fb553caaaac40b6f356185fdd06cbdde",
+    "package-lock.json": "4bea838c53d0499ae199c2c4430e129e541c5f5751584d476abb3a5391eb7974"
+  },
+  "verificationLimits": [
+    "Local automated tests and embedded PostgreSQL only.",
+    "No hosted Supabase Auth, deployed RLS, real retrieval, real AI, or user study was executed.",
+    "Demo results must not be represented as real market research."
+  ]
+}

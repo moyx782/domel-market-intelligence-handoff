@@ -1,0 +1,45 @@
+Started: 2026-10-25T13:51:20.914Z
+Command: node --test tests/ai-extraction.test.mjs tests/auth-flow.test.mjs tests/database.test.mjs tests/deepseek-search.test.mjs tests/research-validation.test.mjs tests/research-workflow.test.mjs tests/rules.test.mjs
+
+? DeepSeek key configures extraction; partial custom config never silently falls back (0.5472ms)
+? provider result requires exact quotation and user supplied focus (2.3963ms)
+? provider failures, truncated output and invalid JSON cannot create findings or leak keys (0.7991ms)
+? credentials never follow redirects and insecure endpoints are rejected before I/O (0.165ms)
+? invitation and recovery callbacks open password setup before SDK consumes hash (0.6464ms)
+? reset redirect uses current origin and fixed local route (0.453ms)
+? password setup rejects short and mismatched input (0.1239ms)
+? PostgreSQL ownership, review reset, audit and immutable reports (1087.7223ms)
+? search uses official endpoint and bearer key, excludes hostile URLs, and fetch saves actual content only (4.1351ms)
+? query limits count Unicode characters and preserve administrator site constraints (0.3617ms)
+? a failed search branch preserves successful results and records partial coverage (0.4581ms)
+? balance errors are actionable but provider bodies and keys never reach the error (0.2924ms)
+? disallowed explicit source URLs are rejected before a provider call (0.1724ms)
+? empty, malformed and oversized fetch results cannot become evidence (0.6932ms)
+? five-page budget and provider notices survive into the saved project coverage log (0.3364ms)
+? guided research retains supplied question, quarter, competitors and sources (0.7647ms)
+? research rejects malformed scope, duplicates and unsupported source protocols (0.2843ms)
+? candidate evidence must match exact retrieved passage and requested scope (0.4012ms)
+? malformed and oversized AI output fail; no evidence returns no candidates (0.1094ms)
+? one unsupported candidate rejects the entire page batch (0.0914ms)
+? without AI, real source text is saved and no candidates are fabricated (0.8096ms)
+? one failed page does not discard another successfully stored source (0.1753ms)
+? missing search and AI config fail honestly before making up sources (0.1331ms)
+? AI extraction failure preserves source but cannot claim completed research (0.1225ms)
+? validated AI results reference their saved source and finish once (0.5529ms)
+? execution budget stops further retrieval and records incomplete coverage (0.172ms)
+? saved-source extraction preserves provenance and never retrieves or reinserts sources (0.2511ms)
+? saved-source extraction keeps previous coverage failures and handles provider failure honestly (0.1515ms)
+? resume rules reject running projects, missing sources, cross-project sources and existing findings (0.4ms)
+? editing accepted text resets approval even if acceptance is requested (0.4866ms)
+? unchanged wording can be reviewed and records reviewer (0.0838ms)
+? reports exclude rejected, pending and other-project findings; snapshots remain fixed (0.5451ms)
+? tests 32
+? suites 0
+? pass 32
+? fail 0
+? cancelled 0
+? skipped 0
+? todo 0
+? duration_ms 1233.4375
+
+Exit code: 0
