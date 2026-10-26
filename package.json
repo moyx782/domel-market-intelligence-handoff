@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "test": "node --test tests/*.test.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 5174",
-    "verify:evidence": "node scripts/collect-evidence.mjs"
+    "verify:evidence": "node scripts/collect-evidence.mjs",
+    "host:api": "node --env-file-if-exists=.env --env-file-if-exists=.env.host server/api.mjs",
+    "host:worker": "node --env-file-if-exists=.env.host server/worker.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

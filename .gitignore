@@ -3,8 +3,10 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.host.example
 *.tsbuildinfo
 *.log
+!evidence/runs/**/*.log
 .openai/
 .sites-runtime/
 backend-secrets*

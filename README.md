@@ -1,42 +1,27 @@
 # Domel Market Intelligence
 
-React + TypeScript + Vite frontend, Supabase Auth/PostgreSQL/Edge Functions backend.
+AI-assisted research with traceable public evidence, human review and approved-only reports.
 
-## Start on Windows
+## Current architecture �� 2026-10-26
+Application execution moves to the team host; cloud Supabase retains database and authentication. This decision supersedes the strict single-host boundary of proposal v0.1. See [architecture decision](docs/ADR-001-host-cloud.md).
 
-1. Install Node.js 24.
-2. Run `npm.cmd ci` in this repository.
-3. Copy `.env.example` to `.env` and enter your Supabase project URL and public publishable key. For interface exploration, the login page also offers a clearly labelled demo.
-4. Run `npm.cmd run dev` and open the URL printed by Vite.
+- React/TypeScript frontend and Supabase Auth remain.
+- Business reads, project creation, research submission, evidence review and report generation go through the Node host API by default.
+- Cloud PostgreSQL stores research jobs. Host worker claims an environment-specific job using a lease, executes the existing DeepSeek adapter and atomically commits sources/findings/result status.
+- Per-request API clients use the verified user's token and public key. Only workers hold the service-role key.
+- Queue UI shows actual job state, environment and attempt count.
+- Existing source IDs, review history and immutable report snapshots remain intact.
 
-Never commit `.env`, database passwords, service-role keys or DeepSeek keys. Frontend VITE variables are public.
+## Run
+Use Node 24, npm.cmd ci, then follow [HOST_SETUP.md](HOST_SETUP.md). Keep frontend public configuration in .env and server secrets in ignored .env.host. Configure the existing cloud project's additive migrations before starting the worker. Run host:api, host:worker and dev in separate terminals.
 
-## Current features and limits
+For classmates, VITE_BACKEND_URL must refer to the reachable team host; localhost refers to their own machine. Demo fixtures remain available without a real research run. Production/public deployment is not performed by committing this repository.
 
-- Connected research workflow, real Supabase authentication and saved projects.
-- Free-text research focus: 1�C5 fields, one per line.
-- Data sources navigation: team presets intentionally empty. Users can add/remove preferred HTTPS page URLs. Preferences are stored per account in the current browser and prefill new research. This is not cloud preference synchronisation or website-wide search configuration.
-- Backend source collection and optional DeepSeek Search/Fetch adapter. Source links, retrieval times and original excerpts remain visible. Search summaries are not evidence.
-- Finding review/audit and approved-only report code; real AI extraction needs separate model configuration and end-to-end acceptance.
-- Demo fixtures are explicitly illustrative. Do not represent them as real research.
+## Validation and limits
+34 automated tests, typecheck and production build passed locally. Raw logs and source hashes: evidence/runs/2026-10-26T06-53-09-270Z/. This does not establish hosted migration, real provider billing, browser QA or real user acceptance.
 
-## Supabase setup
+This migration slice queues whole research runs. URL-level cooldown/domain scheduling, periodic source registry, Python/Playwright crawler, Pi Agent runtime and SSE replay remain planned integrations, not completed features. The current worker uses existing DeepSeek Search/Fetch/extraction. Preset data sources remain undecided. Existing sources represent collected excerpts, not the future source registry.
 
-For a NEW development project, apply `supabase/migrations/202610140001_initial.sql`. Do not rerun this initial migration against an existing database. Configure invited email/password accounts and correct Auth redirect URLs for your frontend.
+See [team workflow](CONTRIBUTING.md), [host API contract](docs/HOST_API.md), [setup](HOST_SETUP.md), and older [Week 6 acceptance](WEEK6_ACCEPTANCE.md). Host setup supersedes older Edge Function deployment instructions for host mode. Legacy Edge execution is available only through explicit VITE_EXECUTION_MODE=legacy-edge rollback.
 
-Deploy `supabase/functions/research`. To deploy through the dashboard, first run `node scripts/bundle-research.mjs` and paste the generated `supabase/dashboard/index.ts` into the function editor. Keep JWT checks enabled.
-
-Backend-only secrets: DEEPSEEK_API_KEY for Search/Fetch; optional AI_BASE_URL, AI_API_KEY and AI_MODEL for extraction. Configure APP_ORIGINS and SOURCE_ALLOWED_DOMAINS for the actual frontend and approved sources. See DEEPSEEK_SETUP_ZH.md. Local tests do not prove deployed provider or authentication behaviour. Latest free-text focus validation also requires deploying the updated function.
-
-## Checks
-
-`npm.cmd test` runs the Node tests, including embedded PostgreSQL ownership and review tests. `npm.cmd run build` checks TypeScript and builds the frontend.
-
-## Team workflow
-
-See CONTRIBUTING.md. Each member uses an individual branch and submits a pull request. Never force-push shared main or share production credentials through GitHub.
-
-
-
-## Week 6 update — 2026-10-25
-DeepSeek model extraction, saved-source continuation, backend readiness checking and review evidence exports are implemented locally. Typecheck/build and 32 tests pass. No hosted deployment or paid API acceptance is claimed. The detailed current configuration and deployment instructions in [WEEK6_ACCEPTANCE.md](WEEK6_ACCEPTANCE.md) and [DEEPSEEK_WEEK6_SETUP.md](DEEPSEEK_WEEK6_SETUP.md) supersede older setup notes. The new review migration must be deployed separately; do not repeat the initial schema migration.
+Never commit API keys, service keys, passwords, .env/.env.host, node_modules, or private evidence. AI-assisted implementation and its validation limits must be disclosed accurately in course submissions.

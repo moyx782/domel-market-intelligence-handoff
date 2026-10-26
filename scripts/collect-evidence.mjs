@@ -14,7 +14,7 @@ for(const [name,args] of steps){
 }
 const hashes={};
 function hashTree(folder){for(const name of readdirSync(join(root,folder))){const file=join(folder,name);if(statSync(join(root,file)).isDirectory())hashTree(file);else hashes[file.replaceAll('\\','/')]=createHash('sha256').update(readFileSync(join(root,file))).digest('hex');}}
-for(const folder of ['src','supabase','tests'])hashTree(folder);
+for(const folder of ['src','supabase','server','tests'])hashTree(folder);
 hashes['package-lock.json']=createHash('sha256').update(readFileSync(join(root,'package-lock.json'))).digest('hex');
 const summary={capturedAt:new Date().toISOString(),runtime:process.version,platform:process.platform,results,sourceSha256:hashes,verificationLimits:['Local automated tests and embedded PostgreSQL only.','No hosted Supabase Auth, deployed RLS, real retrieval, real AI, or user study was executed.','Demo results must not be represented as real market research.']};
 writeFileSync(join(dir,'summary.json'),JSON.stringify(summary,null,2));console.log('Evidence: '+relative(root,dir));
