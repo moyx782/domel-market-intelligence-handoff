@@ -1,0 +1,47 @@
+Started: 2026-10-27T08:48:50.117Z
+Command: node --test tests/ai-extraction.test.mjs tests/auth-flow.test.mjs tests/database.test.mjs tests/deepseek-search.test.mjs tests/host-api.test.mjs tests/host-queue.test.mjs tests/research-validation.test.mjs tests/research-workflow.test.mjs tests/rules.test.mjs
+
+? DeepSeek key configures extraction; partial custom config never silently falls back (0.9033ms)
+? provider result requires exact quotation and user supplied focus (4.8386ms)
+? provider failures, truncated output and invalid JSON cannot create findings or leak keys (1.4156ms)
+? credentials never follow redirects and insecure endpoints are rejected before I/O (0.3001ms)
+? invitation and recovery callbacks open password setup before SDK consumes hash (1.869ms)
+? reset redirect uses current origin and fixed local route (0.2804ms)
+? password setup rejects short and mismatched input (0.4063ms)
+? PostgreSQL ownership, review reset, audit and immutable reports (1675.4917ms)
+? search uses official endpoint and bearer key, excludes hostile URLs, and fetch saves actual content only (6.1085ms)
+? query limits count Unicode characters and preserve administrator site constraints (0.6499ms)
+? a failed search branch preserves successful results and records partial coverage (0.8452ms)
+? balance errors are actionable but provider bodies and keys never reach the error (0.5774ms)
+? disallowed explicit source URLs are rejected before a provider call (0.3036ms)
+? empty, malformed and oversized fetch results cannot become evidence (1.6673ms)
+? five-page budget and provider notices survive into the saved project coverage log (1.0904ms)
+? host API authenticates tokens, enforces CORS, overrides owner and forwards review revision (53.4131ms)
+? host queue isolates owners/environments, coalesces jobs, fences stale leases and commits idempotently (1883.0145ms)
+? guided research retains supplied question, quarter, competitors and sources (1.1856ms)
+? research rejects malformed scope, duplicates and unsupported source protocols (0.5049ms)
+? candidate evidence must match exact retrieved passage and requested scope (0.7767ms)
+? malformed and oversized AI output fail; no evidence returns no candidates (0.1978ms)
+? one unsupported candidate rejects the entire page batch (0.1515ms)
+? without AI, real source text is saved and no candidates are fabricated (1.1741ms)
+? one failed page does not discard another successfully stored source (0.3012ms)
+? missing search and AI config fail honestly before making up sources (0.2158ms)
+? AI extraction failure preserves source but cannot claim completed research (0.2279ms)
+? validated AI results reference their saved source and finish once (0.8931ms)
+? execution budget stops further retrieval and records incomplete coverage (0.3161ms)
+? saved-source extraction preserves provenance and never retrieves or reinserts sources (0.4159ms)
+? saved-source extraction keeps previous coverage failures and handles provider failure honestly (0.2522ms)
+? resume rules reject running projects, missing sources, cross-project sources and existing findings (0.6752ms)
+? editing accepted text resets approval even if acceptance is requested (0.7584ms)
+? unchanged wording can be reviewed and records reviewer (0.1613ms)
+? reports exclude rejected, pending and other-project findings; snapshots remain fixed (0.9676ms)
+? tests 34
+? suites 0
+? pass 34
+? fail 0
+? cancelled 0
+? skipped 0
+? todo 0
+? duration_ms 2157.3035
+
+Exit code: 0

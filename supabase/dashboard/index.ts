@@ -95,13 +95,13 @@ function discoveryQueries(project, allowedDomains) {
  ))].slice(0, 3);
 }
 
-function createDeepSeekSources({apiKey, allowedDomains, allowUrl, fetchImpl = fetch}) {
+function createDeepSeekSources({apiKey, allowedDomains, allowUrl, fetchImpl = fetch, requestTimeoutMs = 12000}) {
  const notices = [], metadata = new Map();
  async function request(tool, payload) {
   let res;
   try {
    res = await fetchImpl(`${DEEPSEEK_ORIGIN}/v1/tools/${tool}`, {
-    method:'POST', redirect:'error', signal:AbortSignal.timeout(12000),
+    method:'POST', redirect:'error', signal:AbortSignal.timeout(Math.min(60000,Math.max(1000,requestTimeoutMs))),
     headers:{Authorization:`Bearer ${apiKey}`, 'Content-Type':'application/json'},
     body:JSON.stringify(payload)
    });

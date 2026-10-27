@@ -24,3 +24,6 @@ This first slice schedules entire research runs. It does not claim per-URL 30-se
 
 ## Read-only readiness check
 Run npm.cmd run host:doctor after configuring .env.host. It records only configuration booleans, endpoint status codes and connection failures in evidence/host-readiness. It does not print keys, claim jobs, call the paid model, or apply migrations. Authentication/public configuration and a queue-table read are probed when their credentials are available. This is a readiness check, not full research acceptance.
+
+## Network timeouts
+Host Worker cloud database requests have a 15-second timeout so an unreachable cloud connection cannot stall a polling loop indefinitely. Host DeepSeek Search/Fetch requests allow 30 seconds; legacy Edge Functions retain the original 12-second default. The overall research budget and five-source cap still apply. Timeout failures remain visible as incomplete/failed research rather than fabricated evidence.

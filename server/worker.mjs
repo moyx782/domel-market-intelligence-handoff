@@ -5,7 +5,8 @@ import {createDeepSeekSources} from '../supabase/functions/_shared/deepseek-sear
 import {extractionConfig,extractCandidates} from '../supabase/functions/_shared/ai-extraction.mjs';
 import {validateScope,validateFindings} from '../supabase/functions/_shared/research-validation.mjs';
 const required=name=>{if(!process.env[name])throw Error('Missing host setting: '+name);return process.env[name];};
-const db=createClient(required('SUPABASE_URL'),required('SUPABASE_SERVICE_ROLE_KEY'),{auth:{persistSession:false,autoRefreshToken:false}});
+const boundedFetch=(url,options={})=>fetch(url,{...options,signal:options.signal?AbortSignal.any([options.signal,AbortSignal.timeout(15000)]):AbortSignal.timeout(15000)});
+const db=createClient(required('SUPABASE_URL'),required('SUPABASE_SERVICE_ROLE_KEY'),{global:{fetch:boundedFetch},auth:{persistSession:false,autoRefreshToken:false}});
 const env=process.env.QUEUE_ENV||'development';
 const call=async promise=>{const r=await promise;if(r.error)throw Error('Cloud database operation failed');return r.data;};
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -17,7 +18,7 @@ async function execute(job){
   const p=await call(db.from('projects').select('*').eq('id',job.project_id).single());validateScope(p);
   const domains=(process.env.SOURCE_ALLOWED_DOMAINS||'www.ebmpapst.com').split(',').map(s=>s.trim().toLowerCase());
   const allowUrl=raw=>{const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||u.port||!domains.includes(u.hostname.toLowerCase()))throw Error('Source URL is not approved');return u.href;};
-  const adapter=createDeepSeekSources({apiKey:required('DEEPSEEK_API_KEY'),allowedDomains:domains,allowUrl});
+  const adapter=createDeepSeekSources({apiKey:required('DEEPSEEK_API_KEY'),allowedDomains:domains,allowUrl,requestTimeoutMs:30000});
   const saved=[];let outcome;
   const config=extractionConfig(k=>process.env[k]);
   const io={now:()=>Date.now(),aiReady:!!config,maxSources:5,notices:adapter.notices,
