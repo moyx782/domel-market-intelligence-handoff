@@ -10,3 +10,4 @@ dist/
 .openai/
 .sites-runtime/
 backend-secrets*
+.runtime/
