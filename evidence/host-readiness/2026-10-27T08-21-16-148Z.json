@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-10-27T08:21:16.145Z",
+  "configured": {
+    "SUPABASE_URL": true,
+    "SUPABASE_PUBLISHABLE_KEY": true,
+    "SUPABASE_SERVICE_ROLE_KEY": false,
+    "DEEPSEEK_API_KEY": false
+  },
+  "checks": [
+    {
+      "name": "host_api",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "name": "api_rejects_anonymous",
+      "status": 401,
+      "ok": true
+    },
+    {
+      "name": "cloud_auth_public_configuration",
+      "status": 200,
+      "ok": true
+    }
+  ],
+  "ready": false,
+  "limits": [
+    "Read-only checks only. No jobs claimed, no provider billing test, no migration applied.",
+    "Keys are never included in this record."
+  ]
+}

@@ -21,3 +21,6 @@ Architecture: application execution on team host; database and authentication on
 
 ## Current limits
 This first slice schedules entire research runs. It does not claim per-URL 30-second/domain throttling, periodic source scheduling, live Pi Agent, Python/Playwright crawling, SSE replay, source registry, or full production pagination. Sources still use existing approved-domain rules; no team presets were selected. Worker uses existing DeepSeek Search/Fetch and bounded extraction. Results are committed atomically after processing rather than checkpointed per page. The API returns generic configuration errors instead of raw provider/database errors. Host availability/network and cloud backup/export remain operational responsibilities.
+
+## Read-only readiness check
+Run npm.cmd run host:doctor after configuring .env.host. It records only configuration booleans, endpoint status codes and connection failures in evidence/host-readiness. It does not print keys, claim jobs, call the paid model, or apply migrations. Authentication/public configuration and a queue-table read are probed when their credentials are available. This is a readiness check, not full research acceptance.
