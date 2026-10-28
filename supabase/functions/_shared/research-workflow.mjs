@@ -52,7 +52,7 @@ export async function collectResearch(project, io, useAI = false) {
   if (!useAI) errors.push('Source collection only. AI extraction has not run; collected pages are not approved findings and their market/quarter relevance needs human verification.');
   const result = {
    status: useAI && findings ? (errors.length ? 'partial' : 'completed') : sources ? 'partial' : 'failed',
-   stage: useAI && findings ? 'Ready for evidence review' : sources ? 'Sources saved �� AI extraction not completed' : 'No usable sources saved',
+   stage: useAI && findings ? 'Ready for evidence review' : sources ? (useAI ? 'AI extraction finished: no validated insights; see coverage log' : 'Sources saved: run AI extraction to generate insights') : 'No usable sources saved',
    errors, sources, findings
   };
   await io.finish(result); return result;
@@ -72,7 +72,7 @@ export async function extractSavedResearch(project,saved,io) {
  // Use saved IDs as work keys: two URLs may redirect to the same final URL.
  // Neither network retrieval nor source insertion is called on this path.
  const byId=new Map(saved.map(s=>[s.id,s]));
- const prior=(project.errors||[]).filter(e=>!e.startsWith('Source collection only.'));
+ const prior=[...new Set((project.errors||[]).map(e=>e.replace(/^(Prior collection notice: )+/, '')).filter(e=>!e.startsWith('Source collection only.')))];
  return collectResearch({...project,source_urls:saved.map(s=>s.id)}, {
   ...io,
   notices:[...prior.map(e=>'Prior collection notice: '+e),...(io.notices||[])],
