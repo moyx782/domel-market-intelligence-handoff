@@ -2,16 +2,16 @@
 const DEEPSEEK_ORIGIN = 'https://api.deepseek.com';
 const takeCharacters = (value, count) => Array.from(String(value)).slice(0, count).join('');
 
-export function discoveryQueries(project, allowedDomains) {
+export function discoveryQueries(project, allowedDomains = []) {
  const sites = allowedDomains.map(d => `site:${d}`).join(' OR ');
- if (!sites || Array.from(sites).length > 96) throw Error('Use a small approved domain list for DeepSeek discovery (site filters must fit within 96 characters).');
- const room = 127 - Array.from(sites).length;
+ if (Array.from(sites).length > 96) throw Error('Use a small approved domain list for DeepSeek discovery (site filters must fit within 96 characters).');
+ const room = sites ? 127 - Array.from(sites).length : 128;
  return [...new Set(project.competitors.map(competitor =>
-  takeCharacters([competitor, project.segment, project.market, project.quarter, ...project.focus, project.question].join(' ').replace(/\s+/g, ' ').trim(), room) + ' ' + sites
+  takeCharacters([competitor, project.segment, project.market, project.quarter, ...project.focus, project.question].join(' ').replace(/\s+/g, ' ').trim(), room) + (sites ? ' ' + sites : '')
  ))].slice(0, 3);
 }
 
-export function createDeepSeekSources({apiKey, allowedDomains, allowUrl, fetchImpl = fetch, requestTimeoutMs = 12000}) {
+export function createDeepSeekSources({apiKey, allowedDomains = [], allowUrl, fetchImpl = fetch, requestTimeoutMs = 12000}) {
  const notices = [], metadata = new Map();
  async function request(tool, payload) {
   let res;
@@ -62,7 +62,7 @@ export function createDeepSeekSources({apiKey, allowedDomains, allowUrl, fetchIm
      } catch { skipped++; }
     }
    }
-   if (skipped) notices.push(`${skipped} search result(s) were excluded by the approved HTTPS domain policy.`);
+   if (skipped) notices.push(`${skipped} search result(s) were excluded by the public HTTPS source policy.`);
    if (!success) throw Error(notices.join(' ') || 'DeepSeek search failed.');
    return urls;
   },
@@ -78,3 +78,4 @@ export function createDeepSeekSources({apiKey, allowedDomains, allowUrl, fetchIm
   }
  };
 }
+

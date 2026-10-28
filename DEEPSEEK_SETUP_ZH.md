@@ -9,7 +9,7 @@
 1. 打开项目的 Edge Functions → Secrets。
 2. 新增 `DEEPSEEK_API_KEY`，值为你已创建的完整 DeepSeek Key。在控制台直接粘贴，不发到聊天、截图、前端或代码仓库。
 3. 保持原有 Supabase 内置密钥和 JWT 验证。首次验收仅需 DeepSeek 搜索 Key，不需要 AI_MODEL。
-4. 来源域名仍使用 `SOURCE_ALLOWED_DOMAINS`。默认只有 `www.ebmpapst.com`。如要研究更多竞争者，由管理员按实际官网添加精确主机名，例如 `www.ebmpapst.com,www.nidec.com,www.ametek.com`；没有通配符、自动放开子域名或任意网页抓取。
+4. 当前没有预选数据源，`SOURCE_DEFAULT_URLS=[]`。用户 URL、未来团队默认 URL 和自动搜索同时参与采集，不再只允许 `www.ebmpapst.com`。旧 `SOURCE_ALLOWED_DOMAINS` 已停用；若管理员确需限制访问，可单独设置 `SOURCE_RESTRICT_DOMAINS`（默认留空，允许公共 HTTPS 网站）。偏好来源不应写入限制列表。
 5. 打开 research → Code，将 `supabase/dashboard/index.ts` 的全部内容替换到控制台的 index.ts，并部署。该文件已内联所有共享模块；不要只复制原始多文件入口。
 6. 若已配置 Supabase CLI，也可在当前项目目录执行 `supabase functions deploy research --project-ref skjtqpuetfrzahrnbdyb`。本次环境未发现可用 CLI 会话，未执行部署。
 
@@ -45,3 +45,6 @@
 - 2026-10-21 离线验证：类型检查、构建、25项测试通过；原始日志见 evidence/runs/2026-10-21T02-50-22-743Z/。后续UI文案调整只另做构建检查。
 
 线上部署、真实Key鉴权、实际搜索结果/余额计费、来源持久化及本地页面新版本仍待部署后实测。
+
+
+详见 [来源采集策略](docs/SOURCE_COLLECTION.md)。填写 URL 不会关闭搜索；搜索异常会保留提示并继续处理已有 URL。

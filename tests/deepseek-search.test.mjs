@@ -17,6 +17,7 @@ test('search uses official endpoint and bearer key, excludes hostile URLs, and f
  assert.equal(calls[0].options.headers.Authorization,'Bearer test-secret-do-not-log');
  assert.equal(calls[0].options.redirect,'error');
  assert.equal(JSON.parse(calls[0].options.body).need_content,false);
+ assert.match(JSON.parse(calls[0].options.body).query,/site:www\.ebmpapst\.com$/);
  assert.equal(calls[1].endpoint,'https://api.deepseek.com/v1/tools/fetch');
  assert.deepEqual(JSON.parse(calls[1].options.body),{url});
  assert.match(adapter.notices.join(' '),/2 search result/);
@@ -25,7 +26,7 @@ test('search uses official endpoint and bearer key, excludes hostile URLs, and f
 test('query limits count Unicode characters and preserve administrator site constraints',()=>{
  const queries=discoveryQueries({...project,segment:'机'.repeat(300),question:'🤖'.repeat(200)},['www.ebmpapst.com']);
  assert.ok(queries.every(q=>Array.from(q).length<=128&&q.endsWith('site:www.ebmpapst.com')));
- assert.throws(()=>discoveryQueries(project,[]),/domain list/);
+ const open=discoveryQueries(project,[]);assert.ok(open.length);assert.ok(open.every(q=>!q.includes('site:')&&Array.from(q).length<=128));
 });
 
 test('a failed search branch preserves successful results and records partial coverage',async()=>{
@@ -58,3 +59,4 @@ test('five-page budget and provider notices survive into the saved project cover
  });
  assert.equal(saved,5);assert.equal(result.findings,0);assert.match(result.errors.join(' '),/processing 5 of 7/);assert.ok(result.errors.includes('One search branch timed out.'));
 });
+

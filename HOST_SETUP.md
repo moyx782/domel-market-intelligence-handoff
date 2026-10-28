@@ -20,10 +20,14 @@ Architecture: application execution on team host; database and authentication on
 - Keep logs free of tokens/keys. Retain redacted screenshots and review/report JSON. Automated local tests are not hosted acceptance.
 
 ## Current limits
-This first slice schedules entire research runs. It does not claim per-URL 30-second/domain throttling, periodic source scheduling, live Pi Agent, Python/Playwright crawling, SSE replay, source registry, or full production pagination. Sources still use existing approved-domain rules; no team presets were selected. Worker uses existing DeepSeek Search/Fetch and bounded extraction. Results are committed atomically after processing rather than checkpointed per page. The API returns generic configuration errors instead of raw provider/database errors. Host availability/network and cloud backup/export remain operational responsibilities.
+This first slice schedules entire research runs. It does not claim per-URL 30-second/domain throttling, periodic source scheduling, live Pi Agent, Python/Playwright crawling, SSE replay, source registry, or full production pagination. No team presets were selected. Public HTTPS collection is enabled by default; manual URLs and future team defaults supplement automatic search. SOURCE_ALLOWED_DOMAINS is retired; SOURCE_RESTRICT_DOMAINS is an optional explicit administrator restriction. Worker uses existing DeepSeek Search/Fetch and bounded extraction. Results are committed atomically after processing rather than checkpointed per page. The API returns generic configuration errors instead of raw provider/database errors. Host availability/network and cloud backup/export remain operational responsibilities.
 
 ## Read-only readiness check
 Run npm.cmd run host:doctor after configuring .env.host. It records only configuration booleans, endpoint status codes and connection failures in evidence/host-readiness. It does not print keys, claim jobs, call the paid model, or apply migrations. Authentication/public configuration and a queue-table read are probed when their credentials are available. This is a readiness check, not full research acceptance.
 
 ## Network timeouts
 Host Worker cloud database requests have a 15-second timeout so an unreachable cloud connection cannot stall a polling loop indefinitely. Host DeepSeek Search/Fetch requests allow 30 seconds; legacy Edge Functions retain the original 12-second default. The overall research budget and five-source cap still apply. Timeout failures remain visible as incomplete/failed research rather than fabricated evidence.
+
+
+## Additive source collection (2026-10-28)
+See [SOURCE_COLLECTION.md](docs/SOURCE_COLLECTION.md). Pull the new code and restart both API and Worker; refresh the frontend. Existing completed runs are historical records and are not rewritten. Start a new project to verify fresh discovery. No database migration or new secret is required.

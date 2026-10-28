@@ -1,3 +1,4 @@
+import {sourcePolicy} from '../supabase/functions/_shared/source-policy.mjs';
 import {createServer} from 'node:http';
 import {pathToFileURL} from 'node:url';
 import {createClient} from '@supabase/supabase-js';
@@ -49,6 +50,8 @@ export function apiServer({clientForToken,environment='development',origins=['ht
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const url=process.env.SUPABASE_URL||process.env.VITE_SUPABASE_URL,key=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
  if(!url||!key)throw Error('Configure Supabase public URL and publishable key for the API.');
- const server=apiServer({environment:process.env.QUEUE_ENV||'development',origins:(process.env.APP_ORIGINS||'http://127.0.0.1:5174,http://127.0.0.1:5175').split(','),clientForToken:token=>createClient(url,key,{global:{headers:{Authorization:'Bearer '+token}},auth:{persistSession:false,autoRefreshToken:false}}),capabilities:{ai:!!extractionConfig(k=>process.env[k]),search:!!process.env.DEEPSEEK_API_KEY,allowed_domains:(process.env.SOURCE_ALLOWED_DOMAINS||'www.ebmpapst.com').split(','),max_sources:5}});
+ const policy=sourcePolicy(k=>process.env[k]);
+ const server=apiServer({environment:process.env.QUEUE_ENV||'development',origins:(process.env.APP_ORIGINS||'http://127.0.0.1:5174,http://127.0.0.1:5175').split(','),clientForToken:token=>createClient(url,key,{global:{headers:{Authorization:'Bearer '+token}},auth:{persistSession:false,autoRefreshToken:false}}),capabilities:{ai:!!extractionConfig(k=>process.env[k]),search:!!process.env.DEEPSEEK_API_KEY,allowed_domains:policy.restrictedDomains,default_source_urls:policy.defaultSourceUrls,discovery_mode:'additive',max_sources:5}});
  server.requestTimeout=15000;server.headersTimeout=10000;server.listen(Number(process.env.API_PORT||8787),process.env.API_BIND||'127.0.0.1',()=>console.log('Host API ready'));
 }
+

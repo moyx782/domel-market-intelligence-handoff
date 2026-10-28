@@ -6,7 +6,7 @@ Week 6 is NOT yet accepted as complete. This record describes local implementati
 ## Implemented in this iteration
 - Feature 1: DEEPSEEK_API_KEY now supports both existing Search/Fetch and model extraction when the user explicitly starts Collect + AI extract. Default extraction model is deepseek-flash; DEEPSEEK_MODEL can override it. Complete custom AI_BASE_URL / AI_API_KEY / AI_MODEL settings take precedence. Partial custom settings fail closed.
 - Extraction validates requested competitor/custom focus and exact source quotation before saving pending findings. Invalid/truncated responses and provider failures cannot create findings. Successfully saved source text remains available when extraction fails.
-- Authenticated backend readiness check reports configuration booleans, approved domains and five-source limit; it never returns secrets and does not itself test provider connectivity.
+- Authenticated backend readiness check reports configuration booleans, optional domain restrictions, defaults and five-source limit; it never returns secrets and does not itself test provider connectivity.
 - Feature 2: original text, edits, decisions, reviewer, timestamps and audit history can be inspected and exported as JSON, with a copyable preview if downloading fails.
 - New database migration blocks acceptance when the linked source cannot support the exact quotation. Editing accepted findings still resets them to pending; old reports remain immutable.
 - Team preset data sources remain undecided and empty. No new data sources were selected.
@@ -20,7 +20,7 @@ AI adapter tests use injected HTTP responses; database tests run embedded Postgr
 Project: skjtqpuetfrzahrnbdyb. Do not recreate the project or re-run the initial database migration.
 1. In Supabase SQL Editor, run only supabase/migrations/202610250001_review_evidence_guard.sql. This replaces the review function and does not delete records.
 2. Edge Functions > Secrets: ensure DEEPSEEK_API_KEY is saved. Do not paste the key into chat, screenshots, GitHub, or VITE variables. If unused partial AI_* settings exist, remove them or supply the complete custom provider configuration. The DeepSeek fallback requires no AI_* settings.
-3. Keep SOURCE_ALLOWED_DOMAINS at the team's actual approved policy. No team presets have been selected by this update. Additional domains need a team decision; missing domains mean limited coverage, not a successful full competitor comparison.
+3. Leave SOURCE_DEFAULT_URLS empty until the team chooses sources. SOURCE_ALLOWED_DOMAINS is retired. Public HTTPS websites are eligible by default. Manual URLs and future defaults must supplement search; optional SOURCE_RESTRICT_DOMAINS is a separate administrator restriction.
 4. Open research > Code. Replace index.ts with the complete generated supabase/dashboard/index.ts and deploy. Keep explicit in-function JWT validation; verify gateway settings are compatible with the existing frontend session.
 5. Open the local updated frontend, sign in, create a fresh project with an approved real source, and click Check backend readiness. It should return version week6-2026-10-25. This is configuration detection only.
 6. Click Collect + AI extract. This performs paid provider calls. Wait for completion. If sources save but no supported findings are found, retain the honest partial/empty result; do not invent a finding to pass acceptance.
@@ -48,3 +48,4 @@ Week 6 �� In Progress: local implementation and checks retained; live accept
 - Additional local verification: evidence/runs/2026-10-25T13-51-16-989Z/ �� typecheck/build PASS, 32/32 automated tests PASS. These checks do not establish hosted execution success.
 
 After deploying the latest generated function, an existing collection-only project can use Extract from saved sources rather than creating a new project. Save the resulting review JSON after inspecting a real candidate. A failed/empty extraction remains a partial result; no synthetic candidates are added.
+

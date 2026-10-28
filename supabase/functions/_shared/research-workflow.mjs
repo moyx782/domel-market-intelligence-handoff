@@ -4,12 +4,35 @@ export async function collectResearch(project, io, useAI = false) {
  const started = io.now();
  try {
   if (useAI && !io.aiReady) throw Error('AI extraction is awaiting API configuration. Choose Collect public sources to save evidence without AI.');
-  let urls = project.source_urls;
-  if (!urls.length) { await io.stage('Discovering public sources'); urls = await io.discover(project); }
-  const unique = [...new Set(urls)];
+  let discovered=[];
+  if (io.discover) {
+   await io.stage('Discovering additional public sources');
+   try { discovered=await io.discover(project); }
+   catch(error) { errors.push(`Automatic discovery failed: ${error instanceof Error ? error.message : 'Search unavailable'}. Provided and default URLs will still be processed.`); }
+  }
+  const canonical=raw=>{try{const u=new URL(raw);u.hash='';return u.href;}catch{return raw;}};
+  const seen=new Set();
+  const pools=[project.source_urls||[],io.defaultSourceUrls||[],discovered].map(urls=>{
+   const domains=new Map();
+   for(const raw of urls){
+    let url;
+    try{url=io.normalizeUrl?io.normalizeUrl(raw):canonical(raw);}
+    catch(error){errors.push(`Excluded source URL: ${error instanceof Error?error.message:'Invalid URL'}`);continue;}
+    if(seen.has(url))continue;seen.add(url);
+    let host;try{host=new URL(url).hostname;}catch{host=url;}
+    if(!domains.has(host))domains.set(host,[]);domains.get(host).push(url);
+   }
+   const ordered=[];
+   while(domains.size)for(const [host,queue] of domains){ordered.push(queue.shift());if(!queue.length)domains.delete(host);}
+   return ordered;
+  });
+  // Round-robin across user, default and discovered URLs, then across domains
+  // within each pool. Neither a long preference list nor one host crowds out search.
+  const unique=[];
+  while(pools.some(pool=>pool.length))for(const pool of pools)if(pool.length)unique.push(pool.shift());
   const selected = unique.slice(0, io.maxSources ?? 15);
   if (selected.length < unique.length) errors.push(`Source limit reached: processing ${selected.length} of ${unique.length} URLs; coverage is incomplete.`);
-  if (!selected.length) errors.push('No source URLs were found. Supply approved public HTML pages in a new project.');
+  if (!selected.length) errors.push('No source URLs were found. Supply public HTTPS pages or check automatic search configuration.');
   for (const [i, url] of selected.entries()) {
    if (io.now() - started > 85000) { errors.push('Execution time limit reached. Remaining pages were not retrieved.'); break; }
    try {
@@ -54,8 +77,9 @@ export async function extractSavedResearch(project,saved,io) {
   ...io,
   notices:[...prior.map(e=>'Prior collection notice: '+e),...(io.notices||[])],
   stage:stage=>io.stage(stage.replace('Retrieving source','Reading saved source')),
-  discover:async()=>{throw Error('No saved sources are available.');},
+  discover:null,defaultSourceUrls:[],normalizeUrl:undefined,
   fetchSource:async id=>{const s=byId.get(id);if(!s)throw Error('Saved source unavailable.');return s;},
   saveSource:async source=>source.id,
  },true);
 }
+

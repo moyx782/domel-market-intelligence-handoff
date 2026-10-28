@@ -55,8 +55,9 @@ export async function backendCapabilities(){
  if(hostMode)return hostRequest('/api/v1/capabilities');
  const {data,error}=await supabase.functions.invoke('research',{body:{mode:'capabilities'}});
  if(error||!data?.version)throw Error('Backend check unavailable. Deploy the Week 6 research function and check your session.');
- return data as {version:string;ai:boolean;search:boolean;allowed_domains:string[];max_sources:number};
+ return data as {version:string;ai:boolean;search:boolean;allowed_domains:string[];default_source_urls?:string[];discovery_mode?:string;max_sources:number};
 }
 
 export const usesHostBackend=hostMode;
 export async function hostJobs(){return hostRequest("/api/v1/research-jobs");}
+

@@ -7,9 +7,10 @@ This update supersedes the October 21 requirement for separate AI_* credentials 
 - Explicitly starting Collect + AI extract also uses this server key for model extraction. Default model: deepseek-flash. Optional override: DEEPSEEK_MODEL.
 - A complete custom AI_BASE_URL, AI_API_KEY and AI_MODEL configuration takes precedence. Partial custom configuration blocks extraction rather than silently switching providers.
 - Collection and extraction incur provider usage. Readiness checking does not make a provider call and does not establish that the key/balance/API works.
-- No team preset domains have been chosen. SOURCE_ALLOWED_DOMAINS remains the actual administrator policy.
+- No team preset sources have been chosen. SOURCE_DEFAULT_URLS is empty. SOURCE_ALLOWED_DOMAINS is retired; automatic discovery is additive and open to public HTTPS websites by default.
 
 Deploy generated supabase/dashboard/index.ts and the new review migration. See WEEK6_ACCEPTANCE.md for exact steps and evidence requirements.
 
 Official endpoint/model reference checked 2026-10-25: https://api-docs.deepseek.com/zh-cn/
 No live deployment or paid provider verification was performed by this local update.
+

@@ -1,3 +1,4 @@
+import {sourcePolicy,publicSourceUrl,publicAddress} from '../_shared/source-policy.mjs';
 import {extractionConfig,extractCandidates} from '../_shared/ai-extraction.mjs';
 import {collectResearch,extractSavedResearch,validateSavedExtraction} from '../_shared/research-workflow.mjs';
 import {createDeepSeekSources} from '../_shared/deepseek-search.mjs';
@@ -8,12 +9,18 @@ const headers={'Access-Control-Allow-Origin':Deno.env.get('APP_ORIGIN')||'http:/
 const response=(data:unknown,status=200,cors=headers)=>new Response(JSON.stringify(data),{status,headers:cors});
 const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false}});
 const env=(name:string)=>{const v=Deno.env.get(name);if(!v)throw Error('Server configuration missing: '+name);return v;};
-const domains=()=>(Deno.env.get('SOURCE_ALLOWED_DOMAINS')||'www.ebmpapst.com').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
-function eligible(raw:string){const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||u.port&&u.port!=='443')throw Error('Only standard public HTTPS URLs are eligible.');if(!domains().some(d=>u.hostname.toLowerCase()===d))throw Error('Source domain is not approved: '+u.hostname);return u;}
+const policy=()=>sourcePolicy((name:string)=>Deno.env.get(name));
+const domains=()=>policy().restrictedDomains;
+function eligible(raw:string){return new URL(publicSourceUrl(raw,domains()));}
+async function checkPublicDns(url:URL){
+ const records=await Promise.allSettled([Deno.resolveDns(url.hostname,'A'),Deno.resolveDns(url.hostname,'AAAA')]);
+ const addresses=records.flatMap(r=>r.status==='fulfilled'?r.value:[]);
+ if(!addresses.length||addresses.some(ip=>!publicAddress(ip)))throw Error('Source DNS must resolve only to public addresses.');
+}
 async function db<T>(promise:PromiseLike<{data:T;error:unknown}>){const {data,error}=await promise;if(error)throw error;return data;}
 async function fetchText(raw:string){
  let url=eligible(raw);let res:Response|undefined;
- for(let i=0;i<4;i++){res=await fetch(url,{redirect:'manual',signal:AbortSignal.timeout(12000),headers:{'User-Agent':'DomelResearchMVP/0.1'}});if(res.status>=300&&res.status<400){const dest=res.headers.get('location');if(!dest)throw Error('Redirect missing destination');url=eligible(new URL(dest,url).href);continue;}break;}
+ for(let i=0;i<4;i++){await checkPublicDns(url);res=await fetch(url,{redirect:'manual',signal:AbortSignal.timeout(12000),headers:{'User-Agent':'DomelResearchMVP/0.1'}});if(res.status>=300&&res.status<400){const dest=res.headers.get('location');if(!dest)throw Error('Redirect missing destination');url=eligible(new URL(dest,url).href);continue;}break;}
  if(!res||!res.ok)throw Error('Source HTTP '+res?.status);
  if(!(res.headers.get('content-type')||'').includes('text/html'))throw Error('Only HTML text pages are supported; PDF/OCR are outside this MVP.');
  if(Number(res.headers.get('content-length')||0)>2000000)throw Error('Page exceeds 2 MB limit.');
@@ -36,12 +43,12 @@ async function execute(p:any,useAI:boolean,saved:any[]=[]){
  const deepseekKey=Deno.env.get('DEEPSEEK_API_KEY');
  const deepseek=deepseekKey?createDeepSeekSources({apiKey:deepseekKey,allowedDomains:domains(),allowUrl:(raw:string)=>eligible(raw).href}):null;
  const io={
-  now:()=>Date.now(),aiReady,maxSources:5,notices:deepseek?.notices,
+  now:()=>Date.now(),aiReady,maxSources:5,defaultSourceUrls:policy().defaultSourceUrls,normalizeUrl:(raw:string)=>eligible(raw).href,notices:deepseek?.notices,
   stage:async(stage:string)=>db(admin.from('projects').update({stage,updated_at:new Date().toISOString()}).eq('id',p.id)),
   discover:async()=>{
    if(deepseek)return deepseek.discover(p);
    const key=Deno.env.get('TAVILY_API_KEY');
-   if(!key)throw Error('Automatic discovery is not configured. Create a new project with approved public source URLs.');
+   if(!key)throw Error('Automatic discovery is not configured. Create a new project with public HTTPS source URLs.');
    const out=await fetch('https://api.tavily.com/search',{method:'POST',signal:AbortSignal.timeout(18000),headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key,query:[p.question,p.segment,p.market,p.quarter,...p.competitors].join(' '),max_results:15,include_domains:domains(),search_depth:'basic'})});
    if(!out.ok)throw Error('Search provider failed (HTTP '+out.status+').');
    return ((await out.json()).results||[]).map((r:any)=>r.url);
@@ -69,7 +76,7 @@ Deno.serve(async req=>{
   const auth=req.headers.get('Authorization')||'';const token=auth.replace(/^Bearer\s+/i,'');if(!token)return reply({error:'Authentication required'},401);
   const {data:{user},error}=await admin.auth.getUser(token);if(error||!user)return reply({error:'Invalid session'},401);
   const body=await req.json();
-  if(body.mode==='capabilities')return reply({version:'week6-2026-10-25',ai:!!getAI(),search:!!Deno.env.get('DEEPSEEK_API_KEY')||!!Deno.env.get('TAVILY_API_KEY'),allowed_domains:domains(),max_sources:5});
+  if(body.mode==='capabilities')return reply({version:'week6-2026-10-25',ai:!!getAI(),search:!!Deno.env.get('DEEPSEEK_API_KEY')||!!Deno.env.get('TAVILY_API_KEY'),allowed_domains:domains(),default_source_urls:policy().defaultSourceUrls,discovery_mode:'additive',max_sources:5});
   if(body.mode && !['collect','research','extract'].includes(body.mode))return reply({error:'Invalid research mode'},400);
   const resume=body.mode==='extract';
   const useAI=body.mode==='research'||resume;
@@ -92,3 +99,4 @@ Deno.serve(async req=>{
   return reply({project_id:p.id,status:'running'},202);
  }catch{return reply({error:'Request failed. Verify project access and backend configuration.'},400);}
 });
+
