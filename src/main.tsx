@@ -4,4 +4,6 @@ import App from './App';
 import {I18nProvider} from './i18n';
 import './style.css';
 import './accessibility.css';
+import './tasks-sources.css';
+import './events-agent.css';
 createRoot(document.getElementById('root')!).render(<React.StrictMode><I18nProvider><App/></I18nProvider></React.StrictMode>);

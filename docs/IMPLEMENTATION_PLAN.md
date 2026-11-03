@@ -1,6 +1,9 @@
 # 市场情报任务系统 · 实施计划 v3（展会资料优先，中国先做）
 
-状态：2026-11-03 确认方向，进入 M1。
+状态：**2026-11-03 M1–M5 已实现并验收**（见第 16 节实现结果）；下一阶段从第 15 节
+的未完成项继续。本期实现细节见 [TASK_QUEUE.md](TASK_QUEUE.md)、
+[EVENT_LIBRARY.md](EVENT_LIBRARY.md)、[AGENT_RUNTIME.md](AGENT_RUNTIME.md)、
+[DOCUMENT_PARSING.md](DOCUMENT_PARSING.md)、[HANDOFF.md](HANDOFF.md)。
 范围：单主机、单用户 Demo；先做中国市场。
 
 ## 1. 产品定位
@@ -30,22 +33,23 @@
 - 公网部署；本期部署在公司内网。
 - 真实企查查 MCP 凭据（能力保留，凭据由管理员填）。
 
-## 3. 当前状态
+## 3. 当前状态（2026-11-03 更新：M1–M5 完成）
 
-| 模块 | 状态 |
-|---|---|
-| 本地 API、JSON 存储、项目/评审/报告 | ✅ 可用 |
-| 研究管线、只读助手 | ✅ 可用 |
-| Agent 运行时（工作区 / MCP / Skills / CLI） | ✅ 后端完成并验证 |
-| 任务队列 `server/task-queue.mjs` | ⚠️ 草稿，未接入 |
-| 来源注册表 | ❌ |
-| Node 采集器 / Playwright / recipe | ❌ |
-| 展会资料库 | ❌ |
-| 插件（Pi extension） | ⚠️ 后端（目录/配置/加载/API）完成，设置页 UI 未接 |
-| 四级角色（功能层） | ✅ 后端 + 设置页；传输安全不在本范围 |
-| 设置页 | ⚠️ 角色 / Agent 工具 / OCR 已完成；MCP / Skills / 插件 UI 未接 |
-| 任务页 / 展会页 / Agent 页 | ❌ |
-| 内置 Domel 公司档案 `seed/company-domel.json` | ✅ 已提交并测试 |
+| 模块 | 状态 | 实现 |
+|---|---|---|
+| 本地 API、JSON 存储、项目/评审/报告 | ✅ 可用 | `local-api.mjs`、`local-store.mjs` |
+| 研究管线、只读助手 | ✅ 可用 | `research-runner.mjs`、`assistant.mjs` |
+| Agent 运行时（工作区 / MCP / Skills / CLI / 插件） | ✅ 后端 + Agent 页 | `agent-runtime.mjs`、`transcripts.mjs`、`src/Agent.tsx` |
+| 持久任务队列（M1） | ✅ 已接入，含任务 API/SSE | `task-queue.mjs`、`task-runner.mjs` |
+| 来源注册表（M3b） | ✅ 30 个中国来源种子 + 调度 + 每域限流 | `source-registry.mjs`、`scheduler.mjs`、`rate-limit.mjs`、`seed/sources-cn.json` |
+| Node 采集器 / Playwright / recipe（M3a） | ✅ | `collector.mjs`、`recipes.mjs` |
+| 展会资料库（M3c） | ✅ discover/enrich、去重、导出、文档可获取性 | `event-store.mjs`、`event-jobs.mjs`、`event-search.mjs` |
+| 插件（Pi extension）（M4b） | ✅ 后端 + 设置页 UI | `agent-config.mjs`、`src/Settings.tsx` |
+| 四级角色（功能层）（M4a） | ✅ 后端 + 设置页三态；传输安全不在本范围 | `permissions.mjs` |
+| 设置页 | ✅ 角色/工具/OCR + MCP/Skills/Plugins/Recipes | `src/Settings.tsx` |
+| 任务页 / 展会页 / 来源页 / Agent 页（M2/M5） | ✅ | `src/Tasks.tsx`、`Events.tsx`、`Sources.tsx`、`Agent.tsx` |
+| 内置 Domel 公司档案 `seed/company-domel.json` | ✅ 已提交并测试 | `seed/` |
+| MinerU 文档解析（M3d） | ⚠️ 配置/状态/接口已定义；真实解析未启用 | `mineru.mjs`、`docs/DOCUMENT_PARSING.md` |
 
 ## 4. 角色与权限
 
@@ -270,11 +274,15 @@ GET  /api/v1/tasks/stream             # SSE
 ### 来源 / 配置 / Agent（沿用并收紧角色）
 
 ```
-GET/POST/PATCH/DELETE /api/v1/sources
+GET/POST/PATCH/DELETE /api/v1/sources        # 读所有角色；开关 user+；增删改 admin+
+POST  /api/v1/sources/:id/run                # user+ → 202 {task}
 GET/POST/PATCH/DELETE /api/v1/agent/{mcp,skills,plugins}
-PATCH /api/v1/agent/settings          # role / cli（cli 仅 system）
-POST  /api/v1/agent/chat              # SSE；viewer 403
-GET   /api/v1/agent/sessions/:id      # viewer 只读
+PATCH /api/v1/agent/settings                 # role / cli（cli 仅 system）/ ocr
+POST  /api/v1/agent/chat                     # SSE；viewer 403
+GET   /api/v1/agent/sessions?projectId=      # viewer 只读（运行历史摘要）
+GET   /api/v1/agent/sessions/:id             # viewer 只读 transcript
+GET/POST/PATCH/DELETE /api/v1/recipes        # 读所有角色；增删改 admin+（recipes:manage）
+POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 recipe
 ```
 
 ## 11. 前端
@@ -310,26 +318,28 @@ GET   /api/v1/agent/sessions/:id      # viewer 只读
 
 ## 12. 里程碑
 
-| 阶段 | 内容 | 验收 |
-|---|---|---|
-| M1 | 队列核心 + 任务 API + 测试 | 优先级、防饥饿、重试、去重、取消、重启恢复 |
-| M2 | 任务页 + 项目页任务列表 + 研究接入 | 实时状态，可取消/重试 |
-| M3a | Node 采集器（HTTP/Readability/Playwright） | 静态页、JS 壳页、超时、超大页、去重 |
-| M3b | 来源注册表 + 调度 + 每域令牌桶 | 30s、Crawl-delay、429 退避、启停 |
-| M3c | 中国展会来源 + event.discover/enrich + 展会页 | 首批 20 个来源；≥30 候选；前 20 核验；导出 |
-| M3d | 文档可获取性 + MinerU 配置/状态/接口预定义 | 只给链接与状态；official/local 配置可读；不强行 OCR |
-| M4a | 四级权限 + 设置页三态 | 权限矩阵全绿 |
-| M4b | 插件目录 + 管理 UI | 安装/卸载/开关；测试扩展可被调用 |
-| M5 | Agent 全功能页 + 浏览器验收 + 证据 | 交互全绿，0 console error |
+| 阶段 | 内容 | 验收 | 状态（2026-11-03） |
+|---|---|---|---|
+| M1 | 队列核心 + 任务 API + 测试 | 优先级、防饥饿、重试、去重、取消、重启恢复 | ✅ `tests/task-queue.test.mjs`（16）、`task-runner.test.mjs`（5）、`task-api.test.mjs`（5） |
+| M2 | 任务页 + 研究接入 | 实时状态，可取消/重试 | ✅ `src/Tasks.tsx`，SSE + 轮询降级，浏览器验收通过 |
+| M3a | Node 采集器（HTTP/Readability/Playwright） | 静态页、JS 壳页、超时、超大页、去重 | ✅ `tests/collector.test.mjs`（23，含真实 Chrome 回退）、`rate-limit`（9）、`recipes`（7） |
+| M3b | 来源注册表 + 调度 + 每域令牌桶 | 30s、Crawl-delay、429 退避、启停 | ✅ 30 个种子来源；`tests/source-registry`（12）、`scheduler`（6） |
+| M3c | 中国展会来源 + event.discover/enrich + 展会页 | 首批 20+ 来源；候选入库；核验；导出 | ✅ 30 来源；真实 discover 入库 10+ 事件、enrich 抓官网；CSV/JSON 导出；`tests/event-store`（8）、`event-jobs`（15）、`event-search`（9） |
+| M3d | 文档可获取性 + MinerU 配置/状态/接口预定义 | 只给链接与状态；official/local 配置可读；不强行 OCR | ✅ probe 分类 + `POST /events/:id/parse` 预定义（未配置 409，已配置 501） |
+| M4a | 四级权限 + 设置页三态 | 权限矩阵全绿 | ✅ `tests/permissions.test.mjs` + API 权限测试 + 浏览器角色三态 |
+| M4b | 插件目录 + 管理 UI | 安装/卸载/开关；测试扩展可被调用 | ✅ 设置页 Plugins；`tests/agent-config`、`agent-mcp` |
+| M5 | Agent 全功能页 + 浏览器验收 + 证据 | 交互全绿，0 console error | ✅ `src/Agent.tsx`、`transcripts.mjs`、`tests/agent-sessions.test.mjs`；浏览器验收 0 console/page error |
 
-## 13. 测试
+## 13. 测试（已实现）
 
-- 单元：队列优先级/防饥饿/重试/去重/取消/持久化；域名令牌桶；recipe 沙箱；展会去重。
-- 采集冒烟：对 `www.domel.com` 首页、`robots.txt`、`sitemap.xml` 做一次真实抓取（已验证 200、robots 放行、sitemap 可用）；单测使用保存的 HTML 快照，不依赖实时网络。
+- 单元：`tests/task-queue.test.mjs`（优先级/防饥饿/重试/去重/取消/持久化）、`rate-limit.test.mjs`、`recipes.test.mjs`、`event-store.test.mjs`、`event-jobs.test.mjs` 等。
+- 采集：`tests/collector.test.mjs` 用注入 fetch + HTML 快照；Playwright 用本地 node:http JS 壳页 + 系统 Chrome（缺失自动 skip）；不依赖实时网络。
 - 公司档案：`tests/company-seed.test.mjs` 校验内置 Domel 档案的别名、产品线、关键词与来源 URL。
-- 接口：任务 SSE、权限矩阵、来源 CRUD、展会导出。
-- 浏览器：任务实时更新、展会筛选/详情/导出、来源开关、Agent、设置三态。
-- 证据：`evidence/task-loop/` 截图 + 日志。
+- 接口：`tests/task-api/events-api/sources-api/recipes-api/agent-sessions.test.mjs`（任务列表/详情/取消/重试/SSE/权限矩阵/来源 CRUD/展会导出/Agent 历史）。
+- 集成：`tests/task-runner.test.mjs`（队列 + 研究 job 生命周期 + source.collect + discover/enrich + scheduler）。
+- 浏览器：`scripts/ui-acceptance.mjs`（六页 + 角色三态 + 移动端 + i18n，0 console/page error）。
+- API 验收：`scripts/acceptance-api.mjs`（health/capabilities/任务/展会/来源/recipes/sessions/角色矩阵/生产模式）。
+- 证据：`evidence/ui-acceptance/` 截图与清单。
 
 ## 14. 风险
 
@@ -352,3 +362,19 @@ GET   /api/v1/agent/sessions/:id      # viewer 只读
 - 企查查 MCP 由管理员提供命令/URL 与凭据。
 - MinerU 默认关闭；官方 API 依赖 token，自部署依赖独立服务与 GPU；两者都由管理员配置。
 - 部署在公司内网单主机，不做全局吞吐上限。
+
+## 16. 实现结果与偏差（2026-11-03）
+
+相对本计划的实现差异，均已在 HANDOFF 记录：
+
+1. **M3c 数据规模**：真实 discover 每次产出约 10–20 条候选（受模型返回与 limit 控制），
+   去重合并后入库；"首批 20 个来源"已超额（30 个）。候选/核验数量由真实网络与模型
+   决定，没有为了凑数写入虚构展会。
+2. **研究接入方式**：`project.research`/`project.extract` 进入统一队列，但执行的仍是
+   固定研究管线（不是 Agent 驱动），这是计划内的 M5 之后事项。
+3. **M3d**：只实现"配置/状态/接口预定义 + 文档可获取性"，真实 MinerU 解析按计划留到后续。
+4. **M4a 权限**：功能层权限完成；传输安全、登录、加密不在本期（计划已声明）。
+5. **前端**：六个页面全部落地；项目研究页保留在 "项目" 导航下；原 Data sources 页被
+   来源注册表页取代。
+6. **额外能力**：任务 SSE 断线补快照、任务页轮询降级、Agent 运行历史、展会 URL
+   HTML 实体解码、历史届次提示、同官网不同名合并——这些是验收中发现问题后的修复。

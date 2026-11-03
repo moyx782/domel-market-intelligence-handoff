@@ -1,0 +1,173 @@
+/* Page styles for the M2 task queue and source registry. Every rule is scoped
+   under .tasks-page/.sources-page so the shared stylesheet stays untouched;
+   the pages reuse .panel/.page-heading/.badge/.table-wrap/.review-actions etc. */
+
+/* ---- Shared page chrome ---------------------------------------------------- */
+.tasks-page .heading-actions,
+.sources-page .heading-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.tasks-page .heading-actions .secondary svg,
+.sources-page .heading-actions .secondary svg{flex-shrink:0}
+.tasks-page .page-heading p,
+.sources-page .page-heading p{max-width:640px}
+
+/* ---- Task queue: live indicator -------------------------------------------- */
+.tasks-page .live-pill{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:600;line-height:1;color:#4c7c60;background:#edf6ef;border:1px solid #d8e7dd;border-radius:999px;padding:7px 11px;white-space:nowrap}
+.tasks-page .live-pill .dot{width:6px;height:6px;border-radius:50%;background:#4c9b77;animation:live-pulse 2s ease-in-out infinite}
+.tasks-page .live-pill.polling{color:#8a7a4d;background:#faf6ea;border-color:#ece2c6}
+@keyframes live-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@media(prefers-reduced-motion:reduce){.tasks-page .live-pill .dot{animation:none}}
+
+/* ---- Task queue: statistics and filters ------------------------------------ */
+.tasks-page .stats.task-stats{grid-template-columns:repeat(5,minmax(0,1fr))}
+.tasks-page .task-filters{flex-wrap:wrap}
+.tasks-page .task-filters .segmented{flex-wrap:wrap}
+.tasks-page .task-filters select{max-width:215px}
+.tasks-page .task-filters .segmented button{white-space:nowrap}
+
+/* ---- Task queue: table ------------------------------------------------------ */
+.tasks-page .task-table{min-width:900px}
+.tasks-page .task-row{cursor:pointer}
+.tasks-page .task-row:hover td{background:#f8fbf9}
+.tasks-page .task-row.selected td{background:#f1f7f2}
+.tasks-page .task-row:last-child td{border-bottom:0}
+.tasks-page .task-link{font-size:11px;font-weight:600;padding:0;justify-content:flex-start;text-align:left}
+.tasks-page .task-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;letter-spacing:.2px;margin-top:5px}
+.tasks-page .task-progress{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.tasks-page .task-created{white-space:nowrap}
+.tasks-page .task-status-cell small{display:block;margin-top:6px;color:#a08a5b}
+.tasks-page .task-related span{max-width:150px;overflow:hidden;text-overflow:ellipsis;display:inline-block}
+.tasks-page .task-actions{display:flex;gap:6px;flex-wrap:wrap}
+.tasks-page .task-actions button{padding:6px 9px;font-size:10px;gap:5px;white-space:nowrap}
+.tasks-page .task-actions button svg{flex-shrink:0}
+.tasks-page .badge.queued{background:#fff6df;color:#9b7a32}
+.tasks-page .badge.succeeded{background:#e4f2eb;color:#3f8267}
+.tasks-page .badge.failed{background:#fbeae5;color:#b76552}
+.tasks-page .badge.cancelled{background:#eef0ef;color:#75827b}
+
+/* ---- Task queue: detail panel ---------------------------------------------- */
+.tasks-page .task-detail .panel-heading{align-items:flex-start}
+.tasks-page .task-detail .heading-actions{justify-content:flex-end}
+.tasks-page .icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border-radius:6px;color:#6f8375}
+.tasks-page .icon-button:hover:not(:disabled){background:#f0f5f1}
+.tasks-page .task-detail-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 22px;padding:0 24px 22px}
+.tasks-page .task-detail-meta>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.tasks-page .task-detail-meta .eyebrow{margin-bottom:0}
+.tasks-page .task-detail-meta strong{font-size:11px;font-weight:600;color:#3e5648;overflow-wrap:anywhere}
+.tasks-page .task-detail-meta .badge{align-self:flex-start}
+.tasks-page .task-related-cell{grid-column:span 2}
+.tasks-page .task-id-full{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:400;letter-spacing:.2px}
+.tasks-page .task-detail-body{padding:0 24px 24px}
+.tasks-page .task-detail-body .alert{margin-bottom:0}
+.tasks-page .task-detail-body .chips span{font-size:9px}
+.tasks-page .task-json{margin-top:18px}
+.tasks-page .task-json:first-child{margin-top:0}
+.tasks-page .task-json pre{margin:0;background:#f7faf8;border:1px solid #e6ede8;border-radius:6px;padding:14px 16px;font-size:11px;line-height:1.7;color:#42594b;max-height:320px}
+.tasks-page .task-json p{margin:0}
+.tasks-page .task-log{list-style:none;margin:10px 0 0;padding:0;border-left:1px solid #e3ebe6}
+.tasks-page .task-log li{position:relative;padding:9px 0 9px 18px;border-bottom:1px solid #f1f5f2}
+.tasks-page .task-log li:last-child{border-bottom:0}
+.tasks-page .task-log li::before{content:'';position:absolute;left:-4px;top:17px;width:7px;height:7px;border-radius:50%;background:#a3bba9;box-shadow:0 0 0 2px #fff}
+.tasks-page .task-log li.warn::before{background:#d2a64b}
+.tasks-page .task-log li.error::before{background:#c46a52}
+.tasks-page .task-log .log-time{display:inline-block;font-size:9px;color:#93a196;margin-right:8px;font-variant-numeric:tabular-nums}
+.tasks-page .task-log .log-level{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#8b9b8e;margin-right:6px}
+.tasks-page .task-log li.warn .log-level{color:#a2813f}
+.tasks-page .task-log li.error .log-level{color:#a55a44}
+.tasks-page .task-log .log-message{font-size:11px;line-height:1.7;color:#54685a}
+
+/* ---- Source registry: statistics and filters -------------------------------- */
+.sources-page .source-stats .stat strong{font-size:33px}
+.sources-page .source-filters{flex-wrap:wrap}
+.sources-page .source-filters select{max-width:170px}
+
+/* ---- Source registry: table ------------------------------------------------- */
+.sources-page .sources-table{min-width:1000px}
+.sources-page .sources-table td{vertical-align:top}
+.sources-page .source-name{display:flex;flex-direction:column;gap:5px;min-width:220px;max-width:330px}
+.sources-page .source-name strong{font-size:12px;font-weight:600;color:#22392e;line-height:1.45}
+.sources-page .source-name a{font-size:10px;color:#4e8265;line-height:1.5;overflow-wrap:anywhere}
+.sources-page .source-name small{margin-top:0;font-size:9px;color:#95a296}
+.sources-page .priority{display:inline-flex;align-items:center;justify-content:center;min-width:26px;padding:3px 6px;border-radius:4px;font-size:9px;font-weight:700;line-height:1.4;background:#eef2ef;color:#5c7466}
+.sources-page .priority.p2{background:#fff6df;color:#94722c}
+.sources-page .priority.p3{background:#fbeae5;color:#a5523d}
+.sources-page .source-status-cell{max-width:190px}
+.sources-page .source-error{display:block;max-width:180px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:9px;color:#b76552}
+.sources-page .source-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sources-page .source-actions button{padding:6px 9px;font-size:10px;gap:5px;white-space:nowrap}
+.sources-page .source-actions button svg{flex-shrink:0}
+.sources-page .icon-only{width:31px;height:31px;padding:0}
+.sources-page .badge.idle{background:#eef2ef;color:#6d7f72}
+.sources-page .badge.error{background:#fbeae5;color:#b76552}
+.sources-page .badge.paused{background:#fff6df;color:#9b7a32}
+.sources-page .badge.manual{background:#e9eef6;color:#5c7191}
+
+/* Enabled checkbox rendered as a switch (the base stylesheet styles labels
+   as form fields, so the wrapper resets layout locally). */
+.sources-page .switch{position:relative;display:inline-flex;align-items:center;margin:0;cursor:pointer}
+.sources-page .switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:inherit}
+.sources-page .switch-track{width:36px;height:20px;border-radius:999px;background:#d9e2db;position:relative;transition:background .15s;flex-shrink:0;pointer-events:none}
+.sources-page .switch-track::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #12302233;transition:transform .15s}
+.sources-page .switch input:checked+.switch-track{background:#4f9a72}
+.sources-page .switch input:checked+.switch-track::after{transform:translateX(16px)}
+.sources-page .switch input:disabled+.switch-track{opacity:.45;cursor:not-allowed}
+.sources-page .switch input:focus-visible+.switch-track{outline:2px solid var(--green);outline-offset:2px}
+
+/* ---- Source registry: add/edit forms --------------------------------------- */
+.sources-page .source-form{padding:24px}
+.sources-page .source-form h2{font-size:15px;margin-bottom:6px}
+.sources-page .source-form>p.small{margin-bottom:18px}
+.sources-page .source-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
+.sources-page .source-form-grid .wide-field{grid-column:1/-1}
+.sources-page .source-form-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:4px}
+.sources-page .source-edit-modal{max-width:560px}
+.sources-page .source-edit-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-top:20px}
+.sources-page .source-edit-modal .small{overflow-wrap:anywhere}
+
+/* ---- Responsive ------------------------------------------------------------ */
+@media(max-width:1200px){
+ .tasks-page .stats.task-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .tasks-page .task-detail-meta{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
+@media(max-width:900px){
+ .tasks-page .heading-actions,.sources-page .heading-actions{width:100%;justify-content:flex-start}
+ .tasks-page .stats.task-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .tasks-page .task-detail-meta{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .tasks-page .task-detail .heading-actions{justify-content:flex-start}
+ .tasks-page .task-filters{width:100%;flex-direction:column;align-items:stretch}
+ .tasks-page .task-filters .segmented{width:100%;justify-content:space-between}
+ .tasks-page .task-filters select{max-width:none}
+ .sources-page .source-filters{width:100%;flex-direction:column;align-items:stretch}
+ .sources-page .source-filters .segmented{width:100%;justify-content:space-between}
+ .sources-page .source-filters select{max-width:none}
+ .sources-page .source-form-grid{grid-template-columns:1fr}
+ .sources-page .source-form-grid .wide-field{grid-column:auto}
+}
+
+@media(max-width:650px){
+ .tasks-page .page-heading,.sources-page .page-heading{gap:14px}
+ .tasks-page .heading-actions,.sources-page .heading-actions{gap:8px}
+ .tasks-page .heading-actions .secondary,
+ .sources-page .heading-actions .secondary,
+ .sources-page .heading-actions .primary{padding:9px 12px;font-size:10px}
+ .tasks-page .live-pill{font-size:9px;padding:5px 9px}
+ .tasks-page .task-detail-meta{padding:0 18px 18px;gap:14px 16px}
+ .tasks-page .task-detail-body{padding:0 18px 20px}
+ .tasks-page .panel-heading .tools{align-items:flex-start}
+ .tasks-page .task-table{min-width:860px}
+ .sources-page .sources-table{min-width:960px}
+ .sources-page .source-form{padding:20px 18px}
+ .sources-page .source-edit-modal{padding:26px 20px}
+ .sources-page .source-edit-modal .modal-close{right:10px;top:10px}
+}
+
+@media(max-width:430px){
+ .tasks-page .stats.task-stats{grid-template-columns:1fr 1fr}
+ .tasks-page .task-detail-meta{grid-template-columns:1fr}
+ .tasks-page .task-related-cell{grid-column:auto}
+ .tasks-page .segmented{display:grid;grid-template-columns:repeat(2,1fr);gap:4px}
+ .tasks-page .segmented button{justify-content:space-between;padding:7px 8px;font-size:9px}
+ .sources-page .source-stats .stat strong{font-size:27px}
+ .sources-page .segmented{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+ .sources-page .segmented button{justify-content:center;padding:7px 6px;font-size:9px}
+}

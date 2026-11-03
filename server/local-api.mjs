@@ -7,7 +7,6 @@
 
 import {createServer} from 'node:http';
 import {pathToFileURL} from 'node:url';
-import {randomUUID} from 'node:crypto';
 import {openLocalStore} from './local-store.mjs';
 import {join} from 'node:path';
 import {createAssistantRunner, localReader, openDeepSeekModel} from './assistant.mjs';
@@ -17,64 +16,40 @@ import {testMcpServer} from './mcp-test.mjs';
 import {mineruStatus} from './mineru.mjs';
 import {serveStatic} from './static.mjs';
 import {can, canSwitchTo, requiredRole} from './permissions.mjs';
-import {publicSourceUrl, sourcePolicy} from '../supabase/functions/_shared/source-policy.mjs';
-import {createDeepSeekSources} from '../supabase/functions/_shared/deepseek-search.mjs';
-import {extractionConfig, extractCandidates} from '../supabase/functions/_shared/ai-extraction.mjs';
-import {validateScope, validateFindings} from '../supabase/functions/_shared/research-validation.mjs';
-import {collectResearch, extractSavedResearch} from '../supabase/functions/_shared/research-workflow.mjs';
+import {sourcePolicy} from '../supabase/functions/_shared/source-policy.mjs';
+import {extractionConfig} from '../supabase/functions/_shared/ai-extraction.mjs';
+import {validateScope} from '../supabase/functions/_shared/research-validation.mjs';
+import {createResearchRunner, extractionReady} from './research-runner.mjs';
+import {openTranscriptStore} from './transcripts.mjs';
+import {createTaskRunner} from './task-runner.mjs';
 
 const DEFAULT_ORIGINS = ['http://127.0.0.1:5174', 'http://127.0.0.1:5175', 'http://localhost:5174', 'http://localhost:5175'];
 
-function configureResearch(store, job, env) {
- return async () => {
-  const project = await store.project(job.project_id);
-  if (!project) throw Error('Project not accessible');
-  const policy = sourcePolicy(name => env[name]);
-  const allowUrl = raw => publicSourceUrl(raw, policy.restrictedDomains);
-  const adapter = createDeepSeekSources({
-   apiKey: env.DEEPSEEK_API_KEY,
-   allowedDomains: policy.restrictedDomains,
-   allowUrl,
-   requestTimeoutMs: 30000,
-  });
-  const config = extractionConfig(name => env[name]);
-  const saved = [];
-  let outcome;
-  const io = {
-   now: () => Date.now(),
-   aiReady: !!config,
-   maxSources: 5,
-   defaultSourceUrls: policy.defaultSourceUrls,
-   normalizeUrl: allowUrl,
-   notices: adapter.notices,
-   stage: async () => {},
-   discover: () => adapter.discover(project),
-   fetchSource: adapter.fetchSource,
-   saveSource: async source => {
-    const id = randomUUID();
-    saved.push({...source, id, retrieved_at: new Date().toISOString(), findings: []});
-    return id;
-   },
-   extract: async (project, source) => extractCandidates(project, source, config, validateFindings),
-   saveFindings: async (id, findings) => {
-    const source = saved.find(item => item.id === id);
-    if (!source) throw Error('Saved source unavailable');
-    source.findings.push(...findings);
-   },
-   finish: async result => { outcome = result; },
-  };
-  if (job.mode === 'extract') await extractSavedResearch(project, await store.sources(project.id), io);
-  else await collectResearch(project, io, job.mode === 'research');
-  if (!outcome) throw Error('Research produced no result');
-  await store.completeJob(job.id, outcome, saved);
- };
+// CSV export keeps a stable column order regardless of which event fields are
+// present, so a spreadsheet import does not shift columns between exports.
+const EVENT_EXPORT_COLUMNS = [
+ 'name', 'edition', 'startDate', 'endDate', 'city', 'country', 'venue', 'organizer', 'website',
+ 'frequency', 'industries', 'scope', 'exhibitorCount', 'visitorCount', 'area', 'exhibitorListUrl',
+ 'exhibitorListStatus', 'applicationDeadline', 'boothPrice', 'ticketPrice', 'region', 'confidence',
+ 'status', 'sources', 'notes',
+];
+
+function csvCell(value) {
+ if (value === null || value === undefined) return '';
+ const text = Array.isArray(value)
+  ? value.map(item => (item && typeof item === 'object' ? (item.url ?? item.name ?? JSON.stringify(item)) : String(item))).join('; ')
+  : String(value);
+ return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 
-export function localApiServer({store, assistant, agentStore, agentRuntime, env = process.env, environment = 'local', origins = DEFAULT_ORIGINS}) {
+export function localApiServer({store, assistant, agentStore, agentRuntime, transcripts, researchRunner, tasks, env = process.env, environment = 'local', origins = DEFAULT_ORIGINS}) {
  const role = () => agentStore?.config().role ?? 'admin';
  const allowed = action => can(role(), action);
+ const runResearch = researchRunner ?? createResearchRunner({store, env});
  const queue = [];
  let running = false;
+ const params = req => new URL(req.url, 'http://localhost').searchParams;
+ const taskQueue = () => tasks?.queue;
 
  async function drain() {
   if (running) return;
@@ -83,7 +58,7 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, env 
   running = true;
   try {
    const started = await store.startJob(next.id);
-   await configureResearch(store, started, env)();
+   await runResearch(started);
   } catch (error) {
    await store.failJob(next.id, error instanceof Error ? error.message : 'Research failed').catch(() => {});
   } finally {
@@ -138,6 +113,12 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, env 
      allowed_domains: policy.restrictedDomains,
      default_source_urls: policy.defaultSourceUrls,
      discovery_mode: 'additive',
+     ...(tasks ? {
+      queue: {file: tasks.queue?.file ?? '', concurrency: Number(env.TASK_CONCURRENCY || 1) || 1},
+      collector: {playwright: true},
+      events: {count: tasks.eventStore ? tasks.eventStore.stats().total : 0},
+      sources: {total: tasks.registry ? tasks.registry.stats().total : 0},
+     } : {}),
     });
    }
    if (path === '/api/v1/ocr/status' && req.method === 'GET') return send(200, mineruStatus(env, agentStore?.ocr()));
@@ -153,9 +134,16 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, env 
     if (!allowed('business:write')) return deny('business:write');
     if (!['collect', 'research', 'extract'].includes(body.mode)) return send(400, {error: 'Invalid research mode'});
     if (!env.DEEPSEEK_API_KEY) return send(409, {error: 'DEEPSEEK_API_KEY is not configured on this demo host. Research and extraction cannot run.'});
-    const config = extractionConfig(name => env[name]);
-    if (body.mode !== 'collect' && !config) return send(409, {error: 'AI extraction is not configured on this demo host'});
+    if (body.mode !== 'collect' && !extractionReady(env)) return send(409, {error: 'AI extraction is not configured on this demo host'});
     const job = await store.enqueue(run[1], body.mode);
+    // With the durable queue the API only schedules the job: one worker runs
+    // research, collection and event tasks in order. Without it (unit tests and
+    // the old inline path) the demo keeps its in-process drain.
+    if (taskQueue()) {
+     const kind = body.mode === 'extract' ? 'project.extract' : 'project.research';
+     const task = await taskQueue().create({kind, projectId: run[1], priority: 1, payload: {mode: body.mode, jobId: job.id}});
+     return send(202, {...job, taskId: task.id, taskState: task.state});
+    }
     if (job.state === 'queued') queue.push(job);
     void drain();
     return send(202, job);
@@ -164,6 +152,299 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, env 
     const jobs = await store.jobs();
     return send(200, jobs.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100));
    }
+
+   // ---- Durable task queue (M1/M2) ---------------------------------------
+   if (path === '/api/v1/tasks/stream' && req.method === 'GET') {
+    if (!taskQueue()) return send(503, {error: 'Task queue is not available'});
+    res.writeHead(200, {
+     'Content-Type': 'text/event-stream; charset=utf-8',
+     'Cache-Control': 'no-store, no-transform',
+     Connection: 'keep-alive',
+     'X-Accel-Buffering': 'no',
+     ...cors,
+    });
+    res.setTimeout(0);
+    res.flushHeaders();
+    const beat = setInterval(() => { if (!res.writableEnded) res.write(': keep-alive\n\n'); }, 15000);
+    const write = event => { if (!res.writableEnded) res.write('data: ' + JSON.stringify(event) + '\n\n'); };
+    const unsubscribe = taskQueue().subscribe(write);
+    req.on('close', () => { clearInterval(beat); unsubscribe(); });
+    return;
+   }
+   if (path === '/api/v1/tasks' && req.method === 'GET') {
+    if (!taskQueue()) return send(503, {error: 'Task queue is not available'});
+    const query = params(req);
+    const limit = Math.max(1, Math.min(500, Number(query.get('limit')) || 200));
+    return send(200, {
+     tasks: taskQueue().list({
+      state: query.get('state') || undefined,
+      kind: query.get('kind') || undefined,
+      projectId: query.get('projectId') || undefined,
+      eventId: query.get('eventId') || undefined,
+      sourceId: query.get('sourceId') || undefined,
+      limit,
+     }),
+     stats: taskQueue().stats(),
+    });
+   }
+   const taskItem = path.match(/^\/api\/v1\/tasks\/([0-9a-f-]{36})$/i);
+   if (taskItem && req.method === 'GET') {
+    if (!taskQueue()) return send(503, {error: 'Task queue is not available'});
+    const task = taskQueue().get(taskItem[1]);
+    if (!task) return send(404, {error: 'Task not found'});
+    return send(200, task);
+   }
+   const taskAction = path.match(/^\/api\/v1\/tasks\/([0-9a-f-]{36})\/(cancel|retry)$/i);
+   if (taskAction && req.method === 'POST') {
+    if (!allowed('tasks:write')) return deny('tasks:write');
+    if (!taskQueue()) return send(503, {error: 'Task queue is not available'});
+    try {
+     const task = taskAction[2] === 'cancel'
+      ? await taskQueue().cancel(taskAction[1])
+      : await taskQueue().retry(taskAction[1]);
+     // Cancelling a queued research task never reaches its handler, so release
+     // the project job record here to keep the research UI consistent.
+     if (taskAction[2] === 'cancel' && task.kind.startsWith('project.') && task.state === 'cancelled' && task.payload?.jobId) {
+      await store.failJob(task.payload.jobId, 'Cancelled by user').catch(() => {});
+     }
+     return send(200, task);
+    } catch (error) {
+     const message = error instanceof Error ? error.message : 'Task action failed';
+     return send(/not found/i.test(message) ? 404 : 409, {error: message});
+    }
+   }
+
+   // ---- Event library (M3c/M3d) ------------------------------------------
+   const hasEvents = () => Boolean(tasks?.eventStore);
+   if (path === '/api/v1/events/export' && req.method === 'GET') {
+    if (!hasEvents()) return send(503, {error: 'Event library is not available'});
+    const format = params(req).get('format') === 'json' ? 'json' : 'csv';
+    if (format === 'json') {
+     res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="domel-events.json"',
+      'Cache-Control': 'no-store',
+      ...cors,
+     });
+     return res.end(JSON.stringify({exportedAt: new Date().toISOString(), events: tasks.eventStore.list({})}, null, 2));
+    }
+    const rows = tasks.eventStore.exportRows();
+    const lines = [EVENT_EXPORT_COLUMNS.join(',')];
+    for (const row of rows) lines.push(EVENT_EXPORT_COLUMNS.map(column => csvCell(row[column])).join(','));
+    res.writeHead(200, {
+     'Content-Type': 'text/csv; charset=utf-8',
+     'Content-Disposition': 'attachment; filename="domel-events.csv"',
+     'Cache-Control': 'no-store',
+     ...cors,
+    });
+    return res.end(lines.join('\n'));
+   }
+   if (path === '/api/v1/events' && req.method === 'GET') {
+    if (!hasEvents()) return send(503, {error: 'Event library is not available'});
+    const query = params(req);
+    const events = tasks.eventStore.list({
+     from: query.get('from') || undefined,
+     to: query.get('to') || undefined,
+     region: query.get('region') || undefined,
+     status: query.get('status') || undefined,
+     q: query.get('q') || undefined,
+     limit: Math.max(1, Math.min(500, Number(query.get('limit')) || 500)),
+    });
+    return send(200, {events, count: events.length});
+   }
+   if (path === '/api/v1/events/discover' && req.method === 'POST') {
+    if (!allowed('events:write')) return deny('events:write');
+    if (!taskQueue() || !hasEvents()) return send(503, {error: 'Event discovery is not available'});
+    const task = await taskQueue().create({
+     kind: 'event.discover',
+     priority: 2,
+     payload: {
+      region: body.region ?? 'cn',
+      query: typeof body.query === 'string' ? body.query : undefined,
+      limit: Math.max(1, Math.min(100, Number(body.limit) || 30)),
+     },
+    });
+    return send(202, {task});
+   }
+   const eventItem = path.match(/^\/api\/v1\/events\/([0-9a-f-]{36})$/i);
+   if (eventItem && req.method === 'GET') {
+    if (!hasEvents()) return send(503, {error: 'Event library is not available'});
+    const event = tasks.eventStore.get(eventItem[1]);
+    if (!event) return send(404, {error: 'Event not found'});
+    return send(200, event);
+   }
+   if (eventItem && req.method === 'PATCH') {
+    if (!allowed('events:write')) return deny('events:write');
+    if (!hasEvents()) return send(503, {error: 'Event library is not available'});
+    try {
+     return send(200, tasks.eventStore.patch(eventItem[1], body));
+    } catch (error) {
+     const message = error instanceof Error ? error.message : 'Event update failed';
+     return send(/not found/i.test(message) ? 404 : 400, {error: message});
+    }
+   }
+   const eventEnrich = path.match(/^\/api\/v1\/events\/([0-9a-f-]{36})\/enrich$/i);
+   if (eventEnrich && req.method === 'POST') {
+    if (!allowed('events:write')) return deny('events:write');
+    if (!taskQueue() || !hasEvents()) return send(503, {error: 'Event enrichment is not available'});
+    if (!tasks.eventStore.get(eventEnrich[1])) return send(404, {error: 'Event not found'});
+    const task = await taskQueue().create({
+     kind: 'event.enrich',
+     eventId: eventEnrich[1],
+     priority: 2,
+     payload: {eventId: eventEnrich[1]},
+    });
+    return send(202, {task});
+   }
+   const eventParse = path.match(/^\/api\/v1\/events\/([0-9a-f-]{36})\/parse$/i);
+   if (eventParse && req.method === 'POST') {
+    if (!allowed('settings:manage')) return deny('settings:manage');
+    if (!hasEvents()) return send(503, {error: 'Event library is not available'});
+    const event = tasks.eventStore.get(eventParse[1]);
+    if (!event) return send(404, {error: 'Event not found'});
+    const document = (event.documents ?? []).find(item => item.url === body.url);
+    if (!document) return send(404, {error: 'Document not found on this event'});
+    const ocr = mineruStatus(env, agentStore?.ocr());
+    if (!ocr.configured) return send(409, {error: 'Document parsing is not configured. Set an OCR provider in Settings.', ocr});
+    if (document.status !== 'downloadable') {
+     return send(409, {error: 'Document is not downloadable; only its link and availability are recorded.', availability: document.status});
+    }
+    return send(501, {
+     error: 'Document parsing is defined but not enabled in this demo phase. The link and availability are already recorded.',
+     ocr,
+    });
+   }
+
+   // ---- Source registry (M3b) --------------------------------------------
+   const hasSources = () => Boolean(tasks?.registry);
+   if (path === '/api/v1/sources' && req.method === 'GET') {
+    if (!hasSources()) return send(503, {error: 'Source registry is not available'});
+    const query = params(req);
+    const enabled = query.has('enabled') ? query.get('enabled') === 'true' : undefined;
+    return send(200, {
+     sources: tasks.registry.list({
+      region: query.get('region') || undefined,
+      type: query.get('type') || undefined,
+      enabled,
+     }),
+     stats: tasks.registry.stats(),
+    });
+   }
+   if (path === '/api/v1/sources' && req.method === 'POST') {
+    if (!allowed('sources:manage')) return deny('sources:manage');
+    if (!hasSources()) return send(503, {error: 'Source registry is not available'});
+    try {
+     return send(201, tasks.registry.create(body));
+    } catch (error) {
+     return send(400, {error: error instanceof Error ? error.message : 'Invalid source'});
+    }
+   }
+   const sourceItem = path.match(/^\/api\/v1\/sources\/([0-9a-f-]{36})$/i);
+   if (sourceItem && req.method === 'PATCH') {
+    if (!hasSources()) return send(503, {error: 'Source registry is not available'});
+    if (!allowed('sources:manage')) {
+     const onlyEnabled = Object.keys(body).length === 1 && typeof body.enabled === 'boolean';
+     if (!allowed('sources:toggle') || !onlyEnabled) return deny('sources:toggle');
+    }
+    try {
+     const patch = allowed('sources:manage') ? body : {enabled: body.enabled};
+     return send(200, tasks.registry.update(sourceItem[1], patch));
+    } catch (error) {
+     const message = error instanceof Error ? error.message : 'Source update failed';
+     return send(/not found/i.test(message) ? 404 : 400, {error: message});
+    }
+   }
+   if (sourceItem && req.method === 'DELETE') {
+    if (!allowed('sources:manage')) return deny('sources:manage');
+    if (!hasSources()) return send(503, {error: 'Source registry is not available'});
+    try {
+     tasks.registry.remove(sourceItem[1]);
+     return send(200, {ok: true});
+    } catch (error) {
+     return send(404, {error: error instanceof Error ? error.message : 'Source not found'});
+    }
+   }
+   const sourceRun = path.match(/^\/api\/v1\/sources\/([0-9a-f-]{36})\/run$/i);
+   if (sourceRun && req.method === 'POST') {
+    if (!allowed('tasks:write')) return deny('tasks:write');
+    if (!hasSources() || !taskQueue()) return send(503, {error: 'Source collection is not available'});
+    const source = tasks.registry.get(sourceRun[1]);
+    if (!source) return send(404, {error: 'Source not found'});
+    const task = await taskQueue().create({
+     kind: 'source.collect',
+     sourceId: source.id,
+     priority: Number(source.priority) || 1,
+     payload: {sourceId: source.id, url: source.url},
+    });
+    return send(202, {task});
+   }
+
+   // ---- Recipes (M3a approval surface) -----------------------------------
+   const hasRecipes = () => Boolean(tasks?.recipes);
+   if (path === '/api/v1/recipes' && req.method === 'GET') {
+    if (!hasRecipes()) return send(503, {error: 'Recipes are not available'});
+    const query = params(req);
+    return send(200, {recipes: tasks.recipes.list({domain: query.get('domain') || undefined, status: query.get('status') || undefined})});
+   }
+   if (path === '/api/v1/recipes' && req.method === 'POST') {
+    if (!allowed('recipes:manage')) return deny('recipes:manage');
+    if (!hasRecipes()) return send(503, {error: 'Recipes are not available'});
+    try {
+     return send(201, tasks.recipes.propose({
+      domain: body.domain,
+      kind: body.kind,
+      body: body.body,
+      proposedBy: 'human',
+      notes: body.notes,
+     }));
+    } catch (error) {
+     return send(400, {error: error instanceof Error ? error.message : 'Invalid recipe'});
+    }
+   }
+   const recipeItem = path.match(/^\/api\/v1\/recipes\/([0-9a-f-]{36})$/i);
+   if (recipeItem && req.method === 'PATCH') {
+    if (!allowed('recipes:manage')) return deny('recipes:manage');
+    if (!hasRecipes()) return send(503, {error: 'Recipes are not available'});
+    try {
+     return send(200, tasks.recipes.update(recipeItem[1], body));
+    } catch (error) {
+     const message = error instanceof Error ? error.message : 'Recipe update failed';
+     return send(/not found/i.test(message) ? 404 : 400, {error: message});
+    }
+   }
+   if (recipeItem && req.method === 'DELETE') {
+    if (!allowed('recipes:manage')) return deny('recipes:manage');
+    if (!hasRecipes()) return send(503, {error: 'Recipes are not available'});
+    try {
+     tasks.recipes.remove(recipeItem[1]);
+     return send(200, {ok: true});
+    } catch (error) {
+     return send(404, {error: error instanceof Error ? error.message : 'Recipe not found'});
+    }
+   }
+   const recipeTest = path.match(/^\/api\/v1\/recipes\/([0-9a-f-]{36})\/test$/i);
+   if (recipeTest && req.method === 'POST') {
+    if (!allowed('recipes:manage')) return deny('recipes:manage');
+    if (!hasRecipes() || !tasks.collector || !tasks.applyRecipe) return send(503, {error: 'Recipe testing is not available'});
+    const recipe = tasks.recipes.get(recipeTest[1]);
+    if (!recipe) return send(404, {error: 'Recipe not found'});
+    let url;
+    try {
+     url = new URL(String(body.url ?? ''));
+    } catch {
+     return send(400, {error: 'Invalid URL'});
+    }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return send(400, {error: 'Invalid URL'});
+    try {
+     const page = await tasks.collector.collect(url.href, {allowPlaywright: false});
+     if (!page.ok) return send(200, {ok: false, error: page.error?.message ?? 'Page is not available'});
+     const applied = await tasks.applyRecipe(recipe, {html: page.html, url: page.finalUrl || url.href, text: page.text});
+     return send(200, applied);
+    } catch (error) {
+     return send(200, {ok: false, error: error instanceof Error ? error.message : 'Recipe test failed'});
+    }
+   }
+
    const review = path.match(/^\/api\/v1\/insights\/([0-9a-f-]{36})\/review$/i);
    if (review && req.method === 'PATCH') {
     if (!allowed('business:write')) return deny('business:write');
@@ -207,6 +488,17 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, env 
      res.end();
     }
     return;
+   }
+   if (path === '/api/v1/agent/sessions' && req.method === 'GET') {
+    const projectId = new URL(req.url, 'http://localhost').searchParams.get('projectId') || undefined;
+    return send(200, {sessions: transcripts ? await transcripts.list({projectId}) : []});
+   }
+   const transcriptRoute = path.match(/^\/api\/v1\/agent\/sessions\/([0-9a-f-]{36})$/i);
+   if (transcriptRoute && req.method === 'GET') {
+    if (!transcripts) return send(404, {error: 'Agent sessions are not available'});
+    const transcript = await transcripts.get(transcriptRoute[1]);
+    if (!transcript) return send(404, {error: 'Agent session not found'});
+    return send(200, transcript);
    }
    if (path === '/api/v1/agent/config' && req.method === 'GET') {
     if (!agentStore) return send(503, {error: 'Agent configuration is not available'});
@@ -334,6 +626,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
  const env = process.env;
  const store = openLocalStore(env.LOCAL_DATA_FILE || '.local/domel.json');
  const agentStore = openAgentStore(env.AGENT_DATA_DIR || '.local');
+ const transcripts = openTranscriptStore({file: env.AGENT_TRANSCRIPT_FILE || '.local/agent/transcripts.json'});
+ // One queue for research, source collection and event jobs. The scheduler is
+ // started together with the queue so due sources are picked up without a
+ // separate worker process.
+ const tasks = createTaskRunner({store, env});
  let deepseek;
  if (env.DEEPSEEK_API_KEY) {
   try {
@@ -355,6 +652,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
    ...deepseek,
    workspaceRoot: env.AGENT_WORKSPACE_ROOT || '.local/workspaces',
    agentDir: agentStore.dir,
+   transcripts,
   })
   : undefined;
  const server = localApiServer({
@@ -362,14 +660,25 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   assistant,
   agentStore,
   agentRuntime,
+  transcripts,
+  tasks,
   env,
   environment: env.DEMO_ENV || 'local',
   origins: (env.APP_ORIGINS || DEFAULT_ORIGINS.join(',')).split(',').map(value => value.trim()).filter(Boolean),
  });
  server.requestTimeout = 15000;
  server.headersTimeout = 10000;
+ tasks.start();
+ // Ctrl-C should stop the handlers and persist the queue before the process dies.
+ const shutdown = () => {
+  void tasks.stop().catch(() => {});
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 800).unref();
+ };
+ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
  server.listen(Number(env.LOCAL_API_PORT || 8788), env.LOCAL_API_BIND || '127.0.0.1', () => {
   console.log('Local demo API ready on http://' + (env.LOCAL_API_BIND || '127.0.0.1') + ':' + (env.LOCAL_API_PORT || 8788));
   console.log('Data: ' + (env.LOCAL_DATA_FILE || '.local/domel.json') + ' · AI: ' + (deepseek ? 'configured' : 'not configured') + ' · Agent dir: ' + agentStore.dir);
+  console.log('Tasks: ' + (env.TASKS_FILE || '.local/tasks.json') + ' · Events: ' + (env.EVENTS_FILE || '.local/events.json') + ' · Sources: ' + (env.SOURCES_FILE || '.local/source-registry.json'));
  });
 }

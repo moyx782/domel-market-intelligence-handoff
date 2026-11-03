@@ -1,0 +1,11 @@
+# robots.txt used by collector tests
+User-agent: BadBot
+Disallow: /
+
+User-agent: *
+Disallow: /private/
+Disallow: /search
+Allow: /private/public/
+Crawl-delay: 1.5
+
+Sitemap: https://expo.example.test/sitemap.xml

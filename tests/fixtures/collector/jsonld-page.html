@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>JSON-LD 页面</title></head>
+<body>
+ <h1>JSON-LD fixture</h1>
+ <script type="application/ld+json">
+ {
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "name": "ISH China & CIHE 2026",
+  "startDate": "2026-03-05",
+  "location": {"@type": "Place", "name": "中国国际展览中心", "address": "北京"}
+ }
+ </script>
+ <script type="application/ld+json">
+ [
+  {"@type": "Organization", "name": "Domel"},
+  {"@type": "Event", "name": "第二场展会", "startDate": "2026-05-01"}
+ ]
+ </script>
+ <script type="application/ld+json">
+ {"@context": "https://schema.org", "@graph": [
+  {"@type": "Event", "name": "图形展会", "startDate": "2026-09-09"}
+ ]}
+ </script>
+ <script type="application/ld+json">{this is not valid json,}</script>
+ <script type="text/javascript">{"@type": "NotJsonLd"}</script>
+ <script type="application/ld+json">
+ <!-- {"@type": "Event", "name": "注释包装的展会"} -->
+ </script>
+</body>
+</html>

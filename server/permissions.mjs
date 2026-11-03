@@ -8,7 +8,13 @@ const RANK = {viewer: 0, user: 1, admin: 2, system: 3};
 export const ACTIONS = {
  'business:read': 'viewer',
  'business:write': 'user',
+ 'tasks:write': 'user',
+ 'events:write': 'user',
+ 'sources:toggle': 'user',
+ 'sources:manage': 'admin',
+ 'recipes:manage': 'admin',
  'agent:chat': 'user',
+ 'agent:read': 'viewer',
  'settings:toggle': 'user',
  'settings:manage': 'admin',
  'roles:manage': 'admin',

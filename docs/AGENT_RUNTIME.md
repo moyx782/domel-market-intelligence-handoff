@@ -1,31 +1,54 @@
-# Agent runtime: MCP and skills
+# Agent runtime: MCP, skills, plugins, roles and run history
 
-The local demo now runs a Pi coding agent that can use MCP servers and skills. Everything lives under `.local/agent/` so it can be inspected, copied or versioned.
+The local demo runs a Pi coding agent that can use MCP servers, skills, plugins and a
+local workspace. Everything lives under `.local/agent/` so it can be inspected, copied
+or versioned.
 
 ```
 .local/
-  agent-config.json            admin settings: role, CLI, MCP servers, skill metadata
+  agent-config.json            role, CLI switches, OCR settings, skill/plugin metadata (0600)
   agent/
-    mcp.json                   generated MCP config (mcpServers shape)
+    mcp.json                   MCP server config, standard mcpServers shape (0600)
     skills/<slug>/SKILL.md     one directory per skill
+    extensions/<slug>/         Pi extensions (plugins)
     sessions/<project>/        Pi session files
+    transcripts.json           durable run history shown by the Agent page
     mcp.log                    MCP connection log
   workspaces/<project|general>/  agent working directory
 ```
 
-## MCP
+## Roles (four tiers)
 
-**`agent/mcp.json` is the source of truth.** Edit it by hand, through the API, or through the settings UI; the runtime reads the file on every run and passes it to Pi's MCP extension, so tools appear as `mcp__<server>__<tool>`.
-
-An admin can write the whole file through the API when the server already exists elsewhere:
+`viewer(0) < user(1) < admin(2) < system(3)`. `system` (T0) can only be set from the local
+CLI (`node scripts/agent-admin.mjs role system`); the web UI never offers it and an admin
+cannot grant it. If a web downgrade locks the demo, restore admin from the CLI:
 
 ```bash
-curl -X PUT http://127.0.0.1:8788/api/v1/agent/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"mcpServers":{"qichacha":{"command":"/usr/bin/npx","args":["-y","@vendor/qichacha-mcp"],"env":{"QCC_KEY":"..."},"exposure":"direct"}}}'
+node scripts/agent-admin.mjs role admin
 ```
 
-Probe a configured server before using it:
+| Action | system | admin | user | viewer |
+|---|---|---|---|---|
+| Read events/projects/evidence/reports and Agent history | yes | yes | yes | yes |
+| Create tasks (discover/enrich/collect/research), correct events | yes | yes | yes | no |
+| Review findings, generate reports | yes | yes | yes | no |
+| Agent chat | yes | yes | yes | no (read-only history) |
+| Toggle MCP/skills/plugins/sources | yes | yes | yes | no |
+| Add/edit/delete MCP/skills/plugins/sources/recipes | yes | yes | no | no |
+| Change role (admin/user/viewer) | yes | yes | no | no |
+| File tools / shell switches | yes | no | no | no |
+
+API writes call `can(role, action)` and return `403 {error, requiredRole}` when the role is
+too low. The matrix is enforced in `server/permissions.mjs` and covered by
+`tests/permissions.test.mjs` and the API tests.
+
+## MCP
+
+**`agent/mcp.json` is the source of truth.** Edit it by hand, through the API, or through
+Settings → MCP servers; the runtime reads the file on every run and passes it to Pi's MCP
+extension, so tools appear as `mcp__<server>__<tool>`. The settings page can also replace
+the whole file as raw JSON and test a connection (the test lists the tools the server
+exposes).
 
 ```bash
 curl -X POST http://127.0.0.1:8788/api/v1/agent/mcp/test \
@@ -33,44 +56,8 @@ curl -X POST http://127.0.0.1:8788/api/v1/agent/mcp/test \
 # => {"ok":true,"tools":[{"name":"..."}]}
 ```
 
-stdio:
-
-```json
-{
-  "mcpServers": {
-    "qichacha": {
-      "command": "/usr/bin/npx",
-      "args": ["-y", "@vendor/qichacha-mcp"],
-      "env": {"QCC_KEY": "..."},
-      "exposure": "direct"
-    }
-  }
-}
-```
-
-HTTP:
-
-```json
-{
-  "mcpServers": {
-    "qichacha": {
-      "url": "https://mcp.example.com/qcc",
-      "headers": {"Authorization": "Bearer ..."},
-      "exposure": "direct"
-    }
-  }
-}
-```
-
-`exposure: "direct"` declares the tools to the model immediately. Absolute command paths are required when the server should start from any workspace: the child process inherits the agent's working directory, not the repository root.
-
-Add one server without replacing the file (admin role):
-
-```bash
-curl -X POST http://127.0.0.1:8788/api/v1/agent/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"qichacha","transport":"stdio","command":"/usr/bin/npx","args":["-y","@vendor/qichacha-mcp"],"env":{"QCC_KEY":"..."}}'
-```
+stdio entries need absolute `command` paths: the child process inherits the agent's
+workspace, not the repository root.
 
 ## Skills
 
@@ -85,25 +72,26 @@ When asked about trade shows, search for upcoming exhibitions, list date, city,
 venue and source URL, and separate confirmed dates from unannounced ones.
 ```
 
-Skills are discovered from `agent/skills/*` even when copied in by hand. `enabled` is stored in `agent-config.json`; only enabled directories are passed to the resource loader. The agent sees the skill list and loads a skill before using it.
+Skills are discovered from `agent/skills/*` even when copied in by hand. `enabled` is
+stored in `agent-config.json`; only enabled directories are passed to the resource loader.
+The settings page can create, edit, enable/disable and delete skills (admin).
 
-## Roles
+## Plugins
 
-`role` is `admin` (default) or `viewer`.
+A plugin is a Pi extension directory under `agent/extensions/<slug>/` with an entry file
+(`index.js` by default). Admins install/uninstall and edit them from Settings → Plugins;
+users may only toggle. A stdio MCP server or plugin executes arbitrary code — the admin
+role is host-level trust.
 
-| Action | Admin | Viewer |
-|---|---|---|
-| Read config | yes | yes, secrets masked |
-| Enable/disable MCP server or skill | yes | yes |
-| Add, edit, delete MCP server or skill | yes | no (403) |
-| Change role or CLI switches | yes | no (403) |
-| Chat with the agent | yes | yes |
+## Agent tools
 
-## CLI
+- Default: all built-in file tools (`read/write/edit/grep/find/ls`), `bash`, every
+  enabled skill, plugin and MCP tool.
+- `cli.enabled=false`: file tools and bash are removed; only MCP tools remain.
+- `cli.allowBash=false`: file tools stay, `bash` is removed.
+- Only `system` can change these switches; admin sees them read-only.
 
-`cli.enabled=false` removes file and shell tools; `cli.allowBash=false` keeps read/write/edit/grep/find/ls but removes `bash`. Both are admin-only.
-
-## Agent chat
+## Agent chat and history
 
 `POST /api/v1/agent/chat` streams SSE:
 
@@ -111,17 +99,34 @@ Skills are discovered from `agent/skills/*` even when copied in by hand. `enable
 {"projectId":"general","message":"Check the latest trade shows"}
 ```
 
-Events: `delta`, `tool_start` (tool name and truncated args), `tool_end`, `done` (text and workspace path), `warning`, `error`. Project ids use `.local/workspaces/<id>`; `general` is the shared workspace. The endpoint returns 503 when `DEEPSEEK_API_KEY` is missing.
+Events: `delta`, `tool_start` (tool name and truncated args), `tool_end`, `done` (text and
+workspace path), `warning`, `error`. Project ids use `.local/workspaces/<id>`; `general` is
+the shared workspace. The endpoint returns 503 when `DEEPSEEK_API_KEY` is missing and 403
+for viewer.
+
+Every completed run is appended to `.local/agent/transcripts.json` with the user prompt,
+assistant answer and tool calls. The Agent page shows this history to every role:
+
+```
+GET /api/v1/agent/sessions?projectId=general   → {sessions:[{id,projectId,title,createdAt,updatedAt,messageCount}]}
+GET /api/v1/agent/sessions/:id                 → {id,projectId,createdAt,updatedAt,messages:[{role,text,at,toolCalls?}]}
+```
+
+Viewers see history only (no composer); users/admins/system can chat and interrupt a run.
+The Agent page is `src/Agent.tsx`.
 
 ## Verification
 
-- 72 automated tests, including an end-to-end MCP test that starts `tests/fixtures/mcp-echo-server.mjs`, runs one agent turn with a scripted model, and asserts `mcp__mock__echo` was called.
-- Real DeepSeek smoke test on 2026-11-03: a configured stdio MCP server exposed `mcp__mock__echo`; the model called it with `{"text":"hello from mcp"}` and received `echo:hello from mcp`. The server was removed afterwards.
-- Skills are discovered from `SKILL.md`; the test asserts the enabled path and the prompt includes the skill.
+- `tests/agent-api.test.mjs`, `tests/agent-config.test.mjs`, `tests/agent-mcp.test.mjs`,
+  `tests/agent-tools.test.mjs`, `tests/agent-sessions.test.mjs`: config, MCP end-to-end,
+  tool switches, transcript store and read-only history.
+- Real DeepSeek smoke test (2026-11-03): a configured stdio MCP server exposed
+  `mcp__mock__echo`; the model called it with `{"text":"hello from mcp"}` and received
+  `echo:hello from mcp`. The server was removed afterwards.
+- Real Agent chat + transcript recorded through the local API (2026-11-03).
 
 ## Limits
 
-- MCP connection failures are not yet surfaced in the chat stream; check `agent/mcp.log`.
-- Any stdio MCP server runs arbitrary code. Only admins may add servers; treat the admin role as host-level trust.
-- MCP tools are exposed `direct`; codemode and tool-search exposure are not exposed in the UI yet.
-- The admin panel UI, the global Agent page and the agent-driven researcher are not built yet; this slice covers the storage, permissions, runtime and APIs.
+- MCP connection failures only go to `agent/mcp.log`; the chat stream does not surface them.
+- MCP tools are exposed `direct`; codemode/tool-search exposure is not in the UI yet.
+- Transport security, login and storage encryption are out of scope for this repository.

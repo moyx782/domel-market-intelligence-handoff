@@ -49,7 +49,7 @@ async function openSessionFile({dir,cwd,model,modelRuntime,loader,tools,agentDir
  return session;
 }
 
-export function createAgentRuntime({store,model,modelRuntime,workspaceRoot,agentDir,systemPrompt=AGENT_SYSTEM_PROMPT}){
+export function createAgentRuntime({store,model,modelRuntime,workspaceRoot,agentDir,systemPrompt=AGENT_SYSTEM_PROMPT,transcripts}){
  return async function chat({projectId='general',message,onEvent=()=>{},abortSignal}){
   if(typeof message!=='string'||!message.trim())throw Error('Invalid agent message');
   if(message.length>12000)throw Error('Agent message is too long');
@@ -84,20 +84,32 @@ export function createAgentRuntime({store,model,modelRuntime,workspaceRoot,agent
 
   const onAbort=()=>{session.abort().catch(()=>{});};
   abortSignal?.addEventListener('abort',onAbort,{once:true});
+  const startedAt=new Date().toISOString();
+  const toolCalls=[];
   const unsubscribe=session.subscribe(event=>{
    if(event.type==='message_update'&&event.assistantMessageEvent.type==='text_delta'){
     onEvent({type:'delta',text:event.assistantMessageEvent.delta});
    }else if(event.type==='tool_execution_start'){
+    toolCalls.push({tool:event.toolName,ok:false,args:safeArgs(event.args)});
     onEvent({type:'tool_start',tool:event.toolName,args:safeArgs(event.args)});
    }else if(event.type==='tool_execution_end'){
+    const pending=[...toolCalls].reverse().find(call=>call.tool===event.toolName&&!call.ok);
+    if(pending)pending.ok=!event.isError;
     onEvent({type:'tool_end',tool:event.toolName,ok:!event.isError});
    }
   });
+  // The runtime keeps the durable transcript: the agent page shows it to every
+  // role, including viewers who cannot chat.
+  const record=patch=>transcripts?.recordRun({projectId,userText:message,toolCalls,startedAt,finishedAt:new Date().toISOString(),...patch}).catch(()=>{});
   try{
    await session.prompt(message.trim());
    const text=session.getLastAssistantText()??'';
    onEvent({type:'done',text,workspace});
+   await record({assistantText:text});
    return {text,workspace};
+  }catch(error){
+   await record({assistantText:'',error:error instanceof Error?error.message:'Agent run failed'});
+   throw error;
   }finally{
    abortSignal?.removeEventListener('abort',onAbort);
    unsubscribe();

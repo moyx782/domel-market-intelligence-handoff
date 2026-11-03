@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+ <meta charset="utf-8">
+ <title>JS 壳页</title>
+</head>
+<body>
+ <div id="root">加载中...</div>
+ <script>
+  document.addEventListener('DOMContentLoaded', function () {
+   var body = '';
+   body += '<h1>渲染后的展会日历</h1>';
+   body += '<p>这里的内容只有 JavaScript 执行后才会出现，用于验证 Playwright 浏览器回退路径是否生效。静态 HTML 中几乎没有正文，所以纯 HTTP 抽取得到的文本长度会低于三百字阈值。</p>';
+   body += '<p>第二段说明：浏览器渲染之后正文长度应当超过阈值，并且采集结果的 engine 字段应标记为 browser，同时保留原始 HTTP 状态码与内容类型。</p>';
+   body += '<p>第三段说明：测试服务器返回的 robots.txt 是 404，因此采集器应当按“不限制”处理，然后继续抓取页面并回退到浏览器渲染。</p>';
+   body += '<p>第四段说明：渲染后的页面标题来自静态 title，正文来自 DOMContentLoaded 之后写入的内容，二者都应出现在采集结果中。</p>';
+   body += '<p>第五段说明：这一段继续补充文本，确保渲染后正文长度稳定超过三百字，避免测试因为阈值边界而出现随机失败。</p>';
+   body += '<p>测试标记：RENDERED_OK</p>';
+   document.getElementById('root').innerHTML = body;
+  });
+ </script>
+</body>
+</html>

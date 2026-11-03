@@ -18,7 +18,8 @@
     "test:ui": "node scripts/ui-acceptance.mjs",
     "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.host server/local-api.mjs",
     "serve": "npm run build && npm run start",
-    "agent:admin": "node scripts/agent-admin.mjs"
+    "agent:admin": "node scripts/agent-admin.mjs",
+    "test:api": "node scripts/acceptance-api.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.5.0",

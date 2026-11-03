@@ -1,0 +1,244 @@
+{
+  "sources": [
+    {
+      "url": "https://www.domel.com/",
+      "title": "Domel 官方网站（产品与公司新闻）",
+      "type": "site",
+      "region": "cn",
+      "priority": 3,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://components.domel.com/",
+      "title": "Domel Components 产品目录",
+      "type": "site",
+      "region": "cn",
+      "priority": 3,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.domel.com/news",
+      "title": "Domel 新闻（展会与活动回顾）",
+      "type": "site",
+      "region": "cn",
+      "priority": 3,
+      "intervalSec": 3600
+    },
+    {
+      "url": "https://www.domel.com/blog",
+      "title": "Domel 博客（应用与行业动态）",
+      "type": "site",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 21600
+    },
+    {
+      "url": "https://www.domel.com/sitemap.xml",
+      "title": "Domel 站点地图",
+      "type": "sitemap",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.cr-expo.com/",
+      "title": "中国制冷展（China Refrigeration）",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 3,
+      "intervalSec": 43200
+    },
+    {
+      "url": "https://www.ishc-cihe.com/",
+      "title": "ISH China & CIHE 中国国际供热通风空调展",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 3,
+      "intervalSec": 43200
+    },
+    {
+      "url": "https://www.ciif-expo.com/",
+      "title": "中国国际工业博览会（CIIF）",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 43200
+    },
+    {
+      "url": "https://www.cantonfair.org.cn/",
+      "title": "中国进出口商品交易会（广交会）",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.motor-expo.com/",
+      "title": "中国国际电机博览会",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 3,
+      "intervalSec": 43200
+    },
+    {
+      "url": "https://www.awe-expo.com/",
+      "title": "中国家电及消费电子博览会（AWE）",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 43200
+    },
+    {
+      "url": "https://www.flowtechchina.com/",
+      "title": "中国国际泵管阀展览会（FlowTech China）",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 43200
+    },
+    {
+      "url": "https://www.neccsh.com/",
+      "title": "国家会展中心（上海）",
+      "type": "venue",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.szcec.com/",
+      "title": "深圳国际会展中心",
+      "type": "venue",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.ciefc.com/",
+      "title": "广交会展馆（中国进出口商品交易会展馆）",
+      "type": "venue",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.ciec-expo.com/",
+      "title": "中国国际展览中心（新馆）",
+      "type": "venue",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.sniec.net/",
+      "title": "上海新国际博览中心",
+      "type": "venue",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.whexpo.com.cn/",
+      "title": "武汉国际博览中心",
+      "type": "venue",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.cdec-sic.com/",
+      "title": "成都世纪城新国际会展中心",
+      "type": "venue",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.hziec.com/",
+      "title": "杭州国际博览中心",
+      "type": "venue",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.car.org.cn/",
+      "title": "中国制冷学会",
+      "type": "association",
+      "region": "cn",
+      "priority": 3,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.chinaasc.org.cn/",
+      "title": "中国建筑学会（暖通空调分会）",
+      "type": "association",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.cgmia.org.cn/",
+      "title": "中国通用机械工业协会",
+      "type": "association",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.ceeia.com/",
+      "title": "中国电器工业协会",
+      "type": "association",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.chinacra.org.cn/",
+      "title": "中国制冷空调工业协会",
+      "type": "association",
+      "region": "cn",
+      "priority": 2,
+      "intervalSec": 86400
+    },
+    {
+      "url": "https://www.chinaiol.com/",
+      "title": "产业在线（暖通制冷行业媒体）",
+      "type": "media",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 21600
+    },
+    {
+      "url": "https://www.rhvcmag.com/",
+      "title": "冷暖商情（暖通空调媒体）",
+      "type": "media",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 21600
+    },
+    {
+      "url": "https://hvacr.hc360.com/",
+      "title": "慧聪暖通（慧聪网暖通频道）",
+      "type": "media",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 21600
+    },
+    {
+      "url": "https://www.ehvacr.com/",
+      "title": "暖通空调在线",
+      "type": "media",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 21600
+    },
+    {
+      "url": "https://www.cdr-expo.com/",
+      "title": "中国国际制冷空调及冷链技术展览会",
+      "type": "organizer",
+      "region": "cn",
+      "priority": 1,
+      "intervalSec": 43200
+    }
+  ]
+}

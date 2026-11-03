@@ -432,7 +432,23 @@ const zh:Record<string,string>={
  'Running on team host':'团队主机运行中',
  'Host execution interrupted':'主机执行中断',
  'AI extraction is awaiting API configuration. Choose Collect public sources to save evidence without AI.':'AI 抽取等待 API 配置。可以选择"收集公开来源"先保存证据。',
+ // Main navigation for the event-first build (M1–M5). Pages register the rest.
+ 'Events':'展会',
+ 'Tasks':'任务',
+ 'Sources':'来源',
+ 'Projects':'项目',
+ 'Agent':'Agent',
+ 'Event calendar':'展会日历',
+ 'Discover events':'发现展会',
+ 'Task queue':'任务队列',
 };
+
+// Page modules register their Chinese labels from their own files, so parallel
+// page work never needs to edit this shared dictionary.
+const extra:Record<string,string>={};
+export function registerMessages(messages:Record<string,string>){
+ Object.assign(extra,messages);
+}
 
 const I18n=createContext<{
  lang:Lang;
@@ -467,7 +483,7 @@ export function I18nProvider({children}:{children:ReactNode}){
  const value=useMemo(()=>({
   lang,
   setLang,
-  t:(text:string,vars?:Record<string,string|number>)=>fill(lang==='zh'?(zh[text]??text):text,vars),
+  t:(text:string,vars?:Record<string,string|number>)=>fill(lang==='zh'?(zh[text]??extra[text]??text):text,vars),
  }),[lang]);
  return <I18n.Provider value={value}>{children}</I18n.Provider>;
 }

@@ -202,10 +202,13 @@ export function openLocalStore(file) {
    });
   },
 
-  failJob(jobId, message) {
+  // `force` lets the task queue record a user cancellation that raced with a
+  // successful run: the queue state is authoritative, so the project/job must
+  // not keep claiming success afterwards.
+  failJob(jobId, message, {force = false} = {}) {
    return mutate(state => {
     const job = state.jobs.find(item => item.id === jobId);
-    if (!job || job.state === 'succeeded' || job.state === 'failed') return job;
+    if (!job || (!force && (job.state === 'succeeded' || job.state === 'failed'))) return job;
     const project = findProject(state, job.project_id);
     const stamp = now();
     if (project) {
