@@ -608,6 +608,18 @@ try {
  await page.locator('.task-table tbody tr').first().click();
  await page.locator('.task-detail').waitFor({timeout: 10000});
  check('task detail panel opens', await page.locator('.task-detail').isVisible());
+ await page.waitForFunction(() => {
+  const node = document.querySelector('.task-detail');
+  if (!node) return false;
+  const rect = node.getBoundingClientRect();
+  return rect.top >= 0 && rect.top < 150;
+ }, null, {timeout: 3000}).catch(() => {});
+ const detailInView = await page.locator('.task-detail').evaluate(node => {
+  const rect = node.getBoundingClientRect();
+  return rect.top >= 0 && rect.top < Math.min(150, window.innerHeight);
+ });
+ check('task detail scrolls into view instead of staying below a long list', detailInView, 'detail top=' + await page.locator('.task-detail').evaluate(node => Math.round(node.getBoundingClientRect().top)));
+ check('task list exposes an explicit View details action', await page.locator('.task-actions button').filter({hasText: 'View details'}).count() >= 1);
  check('task detail shows a log timeline', await page.locator('.task-detail .task-log li').count() >= 1 && (await page.locator('.task-detail').innerText()).includes('Log timeline'));
  check('task detail shows payload and result sections', (await page.locator('.task-detail').innerText()).includes('Payload') && (await page.locator('.task-detail').innerText()).includes('Result'));
  check('task detail shows the full task id', /[0-9a-f]{8}-[0-9a-f]{4}/.test(await page.locator('.task-detail .task-id-full').innerText()));
@@ -953,8 +965,8 @@ try {
 
  await gotoPage('Tasks', 'Task queue');
  await waitMinCount('.task-table tbody tr', 1);
- await page.waitForFunction(() => document.querySelectorAll('.task-table thead th').length === 7, null, {timeout: 15000});
- check('viewer does not see the task ACTIONS column', await page.locator('.task-table thead th').count() === 7, String(await page.locator('.task-table thead th').count()));
+ await page.waitForFunction(() => document.querySelectorAll('.task-table thead th').length === 8, null, {timeout: 15000});
+ check('viewer task table exposes a read-only details column', await page.locator('.task-table thead th').count() === 8 && await page.locator('.task-actions button').filter({hasText: 'View details'}).count() >= 1, String(await page.locator('.task-table thead th').count()));
  check('viewer sees no cancel/retry buttons in task rows',
   await page.locator('.task-table tbody button').filter({hasText: /^(Cancel|Retry)$/}).count() === 0);
 

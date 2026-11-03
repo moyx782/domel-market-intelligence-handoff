@@ -145,11 +145,26 @@ export default function Tasks({role}:{role:Role}){
   .filter(task=>kindFilter==='all'||task.kind===kindFilter)
   .sort((a,b)=>b.createdAt-a.createdAt||a.id.localeCompare(b.id)),[allTasks,stateFilter,kindFilter]);
  const selected=selectedId?allTasks.find(task=>task.id===selectedId)??null:null;
+ const detailRef=useRef<HTMLElement|null>(null);
  const loading=tasks===null&&!error;
  const filtersActive=stateFilter!=='all'||kindFilter!=='all';
 
  useEffect(()=>{
   if(selectedId&&!selected)setSelectedId('');
+ },[selectedId,selected]);
+
+ // With 100+ tasks the detail panel sits far below the list; after selecting a
+ // row scroll it into view (and focus it for keyboard users) so clicking a task
+ // visibly opens its details instead of appearing to do nothing.
+ useEffect(()=>{
+  if(!selectedId||!selected)return;
+  const timer=setTimeout(()=>{
+   const node=detailRef.current;
+   if(!node)return;
+   node.scrollIntoView({behavior:'smooth',block:'start'});
+   node.focus({preventScroll:true});
+  },80);
+  return ()=>clearTimeout(timer);
  },[selectedId,selected]);
 
  async function act(task:Task,action:'cancel'|'retry'){
@@ -245,7 +260,7 @@ export default function Tasks({role}:{role:Role}){
       <th>{t('ATTEMPTS')}</th>
       <th>{t('CREATED')}</th>
       <th>{t('DURATION')}</th>
-      {canWrite&&<th>{t('ACTIONS')}</th>}
+      <th>{t('ACTIONS')}</th>
      </tr></thead>
      <tbody>{visible.map(task=><tr key={task.id} className={'task-row'+(task.id===selectedId?' selected':'')} onClick={()=>setSelectedId(task.id)}>
       <td>
@@ -263,18 +278,20 @@ export default function Tasks({role}:{role:Role}){
       <td>{task.attempts} / {task.maxAttempts}</td>
       <td><span className="task-created">{formatDateTime(task.createdAt,dateTag)}</span></td>
       <td>{formatDuration(taskDuration(task,now))}</td>
-      {canWrite&&<td>
+      <td>
        <div className="task-actions">
-        {(task.state==='queued'||task.state==='running')&&<button className="secondary" disabled={busyId!==''} onClick={event=>{event.stopPropagation();void act(task,'cancel');}}><Ban size={13}/>{t('Cancel')}</button>}
-        {(task.state==='failed'||task.state==='cancelled')&&<button className="secondary" disabled={busyId!==''} onClick={event=>{event.stopPropagation();void act(task,'retry');}}><RotateCcw size={13}/>{t('Retry')}</button>}
+        <button className="secondary" onClick={event=>{event.stopPropagation();setSelectedId(task.id);}}>{t('View details')}</button>
+        {canWrite&&(task.state==='queued'||task.state==='running')&&<button className="secondary" disabled={busyId!==''} onClick={event=>{event.stopPropagation();void act(task,'cancel');}}><Ban size={13}/>{t('Cancel')}</button>}
+        {canWrite&&(task.state==='failed'||task.state==='cancelled')&&<button className="secondary" disabled={busyId!==''} onClick={event=>{event.stopPropagation();void act(task,'retry');}}><RotateCcw size={13}/>{t('Retry')}</button>}
        </div>
-      </td>}
+      </td>
      </tr>)}</tbody>
     </table>
    </div>}
   </section>
 
   {selected&&<TaskDetail task={selected} canWrite={canWrite} busy={busyId!==''} now={now}
+   detailRef={detailRef}
    onCancel={task=>void act(task,'cancel')} onRetry={task=>void act(task,'retry')} onClose={()=>setSelectedId('')}/>}
  </div>;
 }
@@ -289,11 +306,12 @@ function RelatedChips({task}:{task:Task}){
  return <div className="chips task-related">{entries.map(entry=><span key={entry.key} title={entry.value}>{entry.label}: {entry.value.slice(0,8)}</span>)}</div>;
 }
 
-function TaskDetail({task,canWrite,busy,now,onCancel,onRetry,onClose}:{
+function TaskDetail({task,canWrite,busy,now,detailRef,onCancel,onRetry,onClose}:{
  task:Task;
  canWrite:boolean;
  busy:boolean;
  now:number;
+ detailRef:React.RefObject<HTMLElement|null>;
  onCancel:(task:Task)=>void;
  onRetry:(task:Task)=>void;
  onClose:()=>void;
@@ -308,7 +326,7 @@ function TaskDetail({task,canWrite,busy,now,onCancel,onRetry,onClose}:{
  if(task.projectId)related.push([t('Project'),task.projectId]);
  if(task.eventId)related.push([t('Event'),task.eventId]);
  if(task.sourceId)related.push([t('Source'),task.sourceId]);
- return <section className="panel task-detail">
+ return <section className="panel task-detail" ref={detailRef} tabIndex={-1} aria-label={t('Task details')}>
   <div className="panel-heading">
    <div>
     <h2>{t('Task details')} <span className="count">{task.id.slice(0,8)}</span></h2>

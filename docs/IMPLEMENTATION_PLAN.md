@@ -464,3 +464,14 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
    `aria-expanded/controls`；viewer 只读说明；`<html lang>` 与语言同步。
 5. **结果**：前端矩阵 **168/168 PASS / 0 warnings，~43s**；全量 `npm test` **255/255**；
    CI 工作流 `.github/workflows/frontend-quality.yml`（本地未跑 GitHub Runner）。
+
+## 22. 迭代（2026-11-04）：任务详情可发现性
+
+用户反馈“任务现在不可以查看详情吗”。详情功能本身存在，但长列表（demo 151 条）中详情面板
+渲染在表格底部，点击后视口不变，移动端尤其像没有响应。修复：
+
+1. 行尾始终显示 **查看详情** 按钮（viewer 也可用；Cancel/Retry 仍仅 canWrite）。
+2. 选中任务后自动 `scrollIntoView` 并把焦点移到详情面板；关闭按钮回到列表。
+3. 详情面板补充 `aria-label` 与 `tabIndex=-1`，便于键盘/读屏定位。
+4. 验收新增「View details 按钮可见」「详情滚动进视口」「viewer 只读详情列」检查；
+   浏览器验收 194/194，全部 0 console/page error。
