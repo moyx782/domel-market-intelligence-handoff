@@ -604,6 +604,29 @@ export function createEventJobs({
   const industries = uniqueValues(stringList(candidate.industries)).slice(0, 8);
   if (industries.length) input.industries = industries;
   input.confidence = CONFIDENCE_LEVELS.includes(candidate.confidence) ? candidate.confidence : 'low';
+  // "China (UAE) Trade Expo" / "中国（阿联酋）贸易博览会" are held abroad: the
+  // name's "China" is the organiser/commodity origin. The stored geo table knows
+  // the parenthetical country/city, so the candidate is filed under that market
+  // instead of the requested region.
+  if (geo) {
+   const inferred = geo.infer({region: input.region, country: input.country ?? '', province: input.province ?? '', city: input.city ?? '', district: input.district ?? '', venue: input.venue ?? '', name});
+   // The name alone can state the venue country ("China (UAE) Trade Expo"):
+   // that beats a requested region or a discovery-model country field.
+   const named = geo.infer({name});
+   const namedAbroad = ['name-parenthetical', 'name-country'].includes(named.matchedBy) && named.country && named.country !== '中国';
+   if (namedAbroad) {
+    input.country = named.country;
+    input.region = named.region || 'global';
+    if (!input.city && named.city) input.city = named.city;
+    if (!input.province && named.province) input.province = named.province;
+   } else {
+    if (!input.country && inferred.country) input.country = inferred.country;
+    if (!input.city && inferred.city) input.city = inferred.city;
+    if (!input.province && inferred.province) input.province = inferred.province;
+    if (!input.district && inferred.district) input.district = inferred.district;
+    if (inferred.region && inferred.region !== input.region && inferred.matchedBy !== 'region') input.region = inferred.region;
+   }
+  }
   const sourceUrl = httpUrl(candidate.sourceUrl) ?? httpUrl(candidate.url) ?? website;
   if (sourceUrl) input.sources = [{url: sourceUrl, title: text(candidate.sourceTitle) || '搜索结果', verifiedAt: isoNow(now())}];
   return input;
@@ -752,6 +775,44 @@ function candidateUrls(event) {
    const error = Error(`Event not found: ${eventId}`);
    error.permanent = true;
    throw error;
+  }
+  // Older/discovered records may be filed under the requested region ("cn") even
+  // when the name says the fair is held abroad. Correct that before collecting
+  // so the UI filter, country and sources agree.
+  if (geo) {
+   const inferred = geo.infer({
+    region: event.region,
+    country: event.country,
+    province: event.province,
+    city: event.city,
+    district: event.district,
+    venue: event.venue,
+    name: event.name,
+   });
+   const named = geo.infer({name: event.name});
+   const nameSaysAbroad = ['name-parenthetical', 'name-country'].includes(named.matchedBy)
+    && named.country && named.country !== '中国';
+   const early = {};
+   if (nameSaysAbroad) {
+    early.country = named.country;
+    early.region = named.region || 'global';
+    if (!event.city && named.city) early.city = named.city;
+    const where = named.city ? `${named.city}（${named.country}）` : named.country;
+    const noteText = `展会名称含“中国”，但举办地在境外：${where}，已按境外展会归类`;
+    const notes = Array.isArray(event.notes) ? [...event.notes] : [];
+    if (!notes.includes(noteText)) {
+     notes.push(noteText);
+     early.notes = notes;
+    }
+   } else {
+    for (const field of ['country', 'province', 'city', 'district']) {
+     if (needsValue(event[field]) && inferred[field]) early[field] = inferred[field];
+    }
+   }
+   if (Object.keys(early).length) {
+    eventStore.patch(eventId, early);
+    Object.assign(event, early);
+   }
   }
   let urls = candidateUrls(event);
   let discoveredWebsite = '';
@@ -936,6 +997,12 @@ function candidateUrls(event) {
      changes[field] = inferred[field];
      fields.push(field);
     }
+   }
+   const nameSaysAbroad = ['name-parenthetical', 'name-country'].includes(inferred.matchedBy)
+    && inferred.country && inferred.country !== '中国';
+   if (inferred.region && inferred.region !== current('region') && (nameSaysAbroad || inferred.matchedBy !== 'region')) {
+    changes.region = inferred.region;
+    fields.push('region');
    }
   }
 

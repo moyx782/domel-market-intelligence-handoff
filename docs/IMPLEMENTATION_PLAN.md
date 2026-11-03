@@ -394,3 +394,7 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
    补齐旧事件的国家/省/市/区县并清理过期的“缺少官网”notes。
 5. 新增测试 `tests/geo.test.mjs`、`tests/event-jobs-website.test.mjs`；全量测试 230、
    浏览器 187、API 175 均通过（2026-11-03 重跑）。
+6. **境外自办展识别**：`中国（阿联酋）贸易博览会`、`China (UAE) Trade Expo` 这类名称里的
+   "中国"是主办方/货源地，括号里的国家和城市才是举办地。`server/geo.mjs` 解析名称括号，
+   命中存储的国家/城市后把事件归到 `global`/`eu` 区域并在 notes 说明；已入库的旧记录在
+   enrich 时自动纠正。测试 `tests/event-jobs-overseas.test.mjs`；全量测试 234。

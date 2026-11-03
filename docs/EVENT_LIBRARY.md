@@ -46,6 +46,8 @@ POST /api/v1/events/:id/enrich
       → 优先站点首页（/ 或一级路径），深层 contact/about 页会被升级/跳过
   → JSON-LD Event 优先，其次标题/正文启发式
   → 国家/省/市/区县来自 seed/geo-cn.json（城市/展馆表），不用名称猜测
+  → 名称括号里的国家/城市 = 举办地：`中国（阿联酋）贸易博览会` 归为境外（global），
+    并写 note「名称含中国，但举办地在境外」；旧记录在 enrich 时自动纠正
   → 只填有来源的字段；缺失写 notes（如 未找到报名截止日期、展馆待确认）
   → 官网找不到时把候选 URL 写进 notes（官网候选（待人工确认）：...）
   → 文档链接用 collector.probe 分类 availability（linked/downloadable/restricted/unknown）
@@ -126,7 +128,19 @@ seed/geo-cn.json              国家/省/市/区县与展馆存储表（随仓�
 `tests/event-jobs-website.test.mjs`、`tests/events-api.test.mjs`、
 `tests/sources-api.test.mjs`、`tests/recipes-api.test.mjs`。
 
-## 7. 升级与地理回填
+## 7. 境外自办展（中国（X）系列）
+
+外贸行业里有一类"境外自办展"：名称是"中国 + （举办国）+ 贸易博览会"，主办方和货源地是
+中国，实际举办地在括号里的国家（如中国（阿联酋）、中国（印尼）贸易博览会）。系统规则：
+
+- 解析事件名称里的括号内容，用 `seed/geo-cn.json` 的国家/城市表匹配；命中非中国国家/城市
+  → 事件国家=该国、区域=`global`（欧洲国家为 `eu`），城市/省份按表补齐。
+- notes 写「展会名称含"中国"，但举办地在境外：迪拜（阿联酋），已按境外展会归类」。
+- 已入库但区域被误标为 `cn` 的记录，在 `event.enrich` 时自动纠正（不必重建）。
+- 新增国家/城市时补 `seed/geo-cn.json` 的 `countries`/`cities`（含中英文别名），不需要改代码。
+- 测试：`tests/geo.test.mjs`（括号/名称推断）、`tests/event-jobs-overseas.test.mjs`（发现与补全纠正）。
+
+## 8. 升级与地理回填
 
 新增展会城市/展馆时，先扩展 `seed/geo-cn.json`（cities / venues 条目，含中英文别名、
 省份、区县），再部署。旧事件补齐国家/省/市/区县（并清理过期的"缺少官网"notes）：

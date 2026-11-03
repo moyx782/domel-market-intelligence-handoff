@@ -72,3 +72,41 @@ test('normalisation strips punctuation and case without regular expressions', ()
  assert.equal(normalizeGeoText(' 国家会展中心（上海） '), '国家会展中心上海');
  assert.equal(normalizeGeoText('Shanghai New International Expo Centre'), 'shanghainewinternationalexpocentre');
 });
+
+test('a foreign location in parentheses overrides the "China" in the event name', () => {
+ const uae = geo.infer({name: '中国（阿联酋）贸易博览会', region: 'cn'});
+ assert.equal(uae.country, '阿联酋');
+ assert.equal(uae.region, 'global');
+ assert.equal(uae.matchedBy, 'name-parenthetical');
+
+ const english = geo.infer({name: 'China (UAE) Trade Expo', region: 'cn'});
+ assert.equal(english.country, '阿联酋');
+ assert.equal(english.region, 'global');
+
+ const indonesia = geo.infer({name: '中国（印尼）贸易博览会', region: 'cn'});
+ assert.equal(indonesia.country, '印度尼西亚');
+ assert.equal(indonesia.region, 'global');
+
+ const dubai = geo.infer({name: '中国（阿联酋）贸易博览会', region: 'cn', city: '迪拜'});
+ assert.equal(dubai.country, '阿联酋');
+ assert.equal(dubai.city, '迪拜');
+ assert.equal(dubai.province, '迪拜酋长国');
+});
+
+test('domestic parentheticals and explicit country data still win', () => {
+ const domestic = geo.infer({name: '中国（上海）国际工业博览会', region: 'cn'});
+ assert.equal(domestic.country, '中国');
+ assert.equal(domestic.region, 'cn');
+ assert.equal(domestic.city, '上海');
+
+ const canton = geo.infer({name: 'Canton Fair (China Import and Export Fair)', region: 'cn'});
+ assert.equal(canton.country, '中国');
+ assert.equal(canton.city, '广州');
+
+ const explicit = geo.infer({name: '中国（阿联酋）贸易博览会', region: 'cn', country: '中国'});
+ assert.equal(explicit.country, '中国');
+
+ const australia = geo.infer({name: '澳大利亚中国纺织服装服饰展', region: 'cn'});
+ assert.equal(australia.country, '澳大利亚');
+ assert.equal(australia.region, 'global');
+});

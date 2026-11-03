@@ -17,6 +17,7 @@
 | 来源注册表 + 调度器 + 每域令牌桶/robots/Crawl-delay/429 退避/403 暂停 | ✅ 30 个中国来源种子 |
 | 展会资料库：`event.discover` / `event.enrich`、官网自动查找、去重合并、文档可获取性、CSV/JSON 导出 | ✅ |
 | 展会地理层级：国家/省/市/区县从存储的城市表推断（`seed/geo-cn.json`），不用名称猜测 | ✅ |
+| 境外自办展识别：`中国（阿联酋）贸易博览会` 这类名称按括号国家归为境外展会（region=global/eu），不误判为中国 | ✅ |
 | 展会页（首页）：列表/时间轴、筛选、详情、发现/补全/手动修正/导出 | ✅ |
 | 来源页、Settings 的 MCP/Skills/Plugins/Recipes 管理 | ✅ |
 | Agent 页：SSE 对话、工具卡片、可中断、运行历史；viewer 只读历史 | ✅ |
@@ -103,7 +104,7 @@ seed/geo-cn.json          国家/省/市/区县与展馆地理表（展会地点
 ## 测试与验收
 
 ```bash
-npm test                        # 230 个 Node 测试
+npm test                        # 234 个 Node 测试
 npm run build                   # tsc + vite
 
 # 独立验收（isolated data dir，脚本头注释有完整命令）：

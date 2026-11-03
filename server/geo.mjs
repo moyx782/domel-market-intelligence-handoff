@@ -90,9 +90,85 @@ export function openGeoIndex({file = null, data = null} = {}) {
  const venues = indexEntries(source.venues);
  const regions = source.regions ?? {};
 
- function countryMatch(value) {
+ function countryEntry(value) {
   const hit = longestMatch(countries, value);
+  return hit ? {...hit} : null;
+ }
+
+ function countryMatch(value) {
+  const hit = countryEntry(value);
   return hit ? {country: hit.name} : null;
+ }
+
+ function regionOfCountry(country) {
+  return countryEntry(country)?.region ?? '';
+ }
+
+ // Parentheses in trade-fair names are locations: "中国（阿联酋）贸易博览会" and
+ // "China (UAE) Trade Expo" are held in the UAE even though the organiser is
+ // Chinese. Parsing them is string scanning, not a guess from the name.
+ function parseParentheticals(text) {
+  const source = String(text ?? '');
+  const parts = [];
+  for (let index = 0; index < source.length; index += 1) {
+   const open = source[index];
+   if (open !== '（' && open !== '(') continue;
+   const closeChar = open === '（' ? '）' : ')';
+   const close = source.indexOf(closeChar, index + 1);
+   if (close < 0) break;
+   parts.push(source.slice(index + 1, close).trim());
+   index = close;
+  }
+  return parts;
+ }
+
+ // A foreign location mentioned in the name (parenthetical first). "China" in
+ // the name means the organiser/commodity origin, not the venue country.
+ function locationFromName(name) {
+  const text = String(name ?? '');
+  if (!text) return null;
+  for (const part of parseParentheticals(text)) {
+   const cityHit = longestMatch(cities, part);
+   if (cityHit && cityHit.country && cityHit.country !== '中国') {
+    return {
+     country: cityHit.country,
+     province: cityHit.province ?? '',
+     city: cityHit.name,
+     district: '',
+     region: regionOfCountry(cityHit.country) || 'global',
+     matchedBy: 'name-parenthetical',
+    };
+   }
+   const countryHit = longestMatch(countries, part);
+   if (countryHit && countryHit.name !== '中国') {
+    return {
+     country: countryHit.name,
+     province: '',
+     city: '',
+     district: '',
+     region: countryHit.region ?? 'global',
+     matchedBy: 'name-parenthetical',
+    };
+   }
+  }
+  // No usable parenthetical: scan country names in the name ("澳大利亚中国纺织服装服饰展").
+  const haystack = normalizeGeoText(text);
+  let best = null;
+  let bestLength = 0;
+  for (const country of source.countries) {
+   if (country.name === '中国') continue;
+   for (const variant of [...new Set([country.name, ...(Array.isArray(country.aliases) ? country.aliases : [])].flatMap(nameVariants))]) {
+    if (variant.length < 2) continue;
+    const latin = /^[a-z0-9]+$/.test(variant);
+    if (latin && variant.length < 4) continue;
+    if (!haystack.includes(variant) || variant.length <= bestLength) continue;
+    best = country;
+    bestLength = variant.length;
+   }
+  }
+  return best
+   ? {country: best.name, province: '', city: '', district: '', region: best.region ?? 'global', matchedBy: 'name-country'}
+   : null;
  }
 
  function cityMatch(value) {
@@ -145,22 +221,41 @@ export function openGeoIndex({file = null, data = null} = {}) {
   if (!cityEntry) storedCity = longestMatch(cities, freeText);
   const resolvedCity = cityEntry ?? (storedCity ? {country: storedCity.country ?? '', province: storedCity.province ?? '', city: storedCity.name} : null);
   const venueCountry = venueHit?.country ?? '';
-  const countryHit = countryMatch(country)?.country ?? '';
+  const explicitCountry = country ? countryEntry(country) : null;
   const provinceHit = longestMatch(provinces, province)?.country ? longestMatch(provinces, province) : null;
-  const resolvedProvince = venueHit?.province || province || provinceHit?.name || resolvedCity?.province || '';
-  const resolvedCountry = country
-   ? countryHit || resolvedCity?.country || venueCountry || ''
-   : (resolvedCity?.country || venueCountry || (provinceHit?.country ?? '') || (region ? regions[region] ?? '' : ''));
-  const resolvedCityName = venueHit?.city || (cityEntry ? cityEntry.city : (storedCity?.name ?? ''));
+  const nameLocation = locationFromName(name);
+  // "China" in "China (UAE) Trade Expo" is the organiser/commodity origin; the
+  // parenthetical city/country is where the event is held.
+  const nameForeign = nameLocation && nameLocation.country !== '中国' ? nameLocation : null;
+  let resolvedCountry;
+  let resolvedRegion = region;
+  if (country) {
+   resolvedCountry = explicitCountry?.name || resolvedCity?.country || venueCountry || '';
+   resolvedRegion = explicitCountry?.region || regionOfCountry(resolvedCountry) || region;
+  } else {
+   resolvedCountry = venueCountry || resolvedCity?.country || (provinceHit?.country ?? '') || nameForeign?.country || (region ? regions[region] ?? '' : '');
+   const countryRegion = regionOfCountry(resolvedCountry);
+   if (countryRegion) resolvedRegion = countryRegion;
+   else if (nameForeign?.region) resolvedRegion = nameForeign.region;
+  }
+  const resolvedProvince = venueHit?.province || province || provinceHit?.name || resolvedCity?.province || nameForeign?.province || '';
+  const resolvedCityName = venueHit?.city || (cityEntry ? cityEntry.city : (storedCity?.name ?? nameForeign?.city ?? ''));
   const resolvedDistrict = district
    || venueHit?.district
    || districtMatch(cityEntry ?? storedCity, [address, venue, name].filter(Boolean).join(' '));
+  let matchedBy = 'none';
+  if (venueHit) matchedBy = 'venue';
+  else if (cityEntry || storedCity) matchedBy = 'city';
+  else if (nameForeign) matchedBy = nameForeign.matchedBy;
+  else if (explicitCountry || provinceHit) matchedBy = 'country';
+  else if (region) matchedBy = 'region';
   return {
    country: resolvedCountry,
    province: resolvedProvince,
    city: resolvedCityName,
    district: resolvedDistrict,
-   matchedBy: venueHit ? 'venue' : (cityEntry || storedCity ? 'city' : (countryHit || provinceHit ? 'country' : (region ? 'region' : 'none'))),
+   region: resolvedRegion,
+   matchedBy,
   };
  }
 
@@ -180,6 +275,7 @@ export function openGeoIndex({file = null, data = null} = {}) {
   stats,
   infer,
   country: countryMatch,
+  countryEntry,
   city: cityMatch,
   venue: venueMatch,
  };

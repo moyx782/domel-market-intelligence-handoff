@@ -50,7 +50,7 @@ npm run dev             # 前端: http://127.0.0.1:5174
 测试、构建与验收：
 
 ```bash
-npm test                                          # 230 个 Node 测试
+npm test                                          # 234 个 Node 测试
 npm run build                                     # tsc + vite
 
 # 独立验收（脚本会准备隔离数据，不写仓库 .local/）：
@@ -114,7 +114,7 @@ src/
   messages-*.ts        新页面词条
   tasks-sources.css / events-agent.css  新页面样式
 
-tests/                 230 个 Node 测试
+tests/                 234 个 Node 测试
 tests/fixtures/        可执行 mock MCP server、API fakes、HTML/事件 fixtures
 scripts/               demo:lan、ui-acceptance、acceptance-api、agent-admin、pi spike
 evidence/ui-acceptance/ 浏览器验收截图与清单
@@ -151,13 +151,14 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 | 来源/展会 | `tests/source-registry/scheduler/documents/event-store/event-jobs.test.mjs`；真实 discover 14 条候选、enrich 抓官网成功（2026-11-03） |
 | 展会官网补全 | enrich 对无官网事件用 DeepSeek 搜索候选、抓取匹配后写入官网（优先首页）；`tests/event-jobs-website.test.mjs`；演示库 27/31 事件有官网 |
 | 地理层级 | 国家/省/市/区县由 `seed/geo-cn.json` 存储表推断（`server/geo.mjs`，无正则）；`tests/geo.test.mjs`；`scripts/backfill-event-geo.mjs` 可离线补齐旧数据 |
+| 境外自办展 | `中国（阿联酋）贸易博览会`/`China (UAE) Trade Expo` 等按名称括号里的国家/城市归类为境外（region=global/eu），加"名称含中国但举办地在境外"notes；`tests/event-jobs-overseas.test.mjs` |
 | 真实 DeepSeek 研究 | 2026-11-03：9 个候选 URL，抓 5 页，1 条 finding，状态 partial |
 | 只读助手 SSE | 真实模型 0.7s 返回；项目问题会调用 `list_findings` 并引用 Nidec |
 | Agent + MCP | 配置 stdio mock server 后，真实模型调用 `mcp__mock__echo` 得到 `echo:hello from mcp` |
 | Agent + 历史 | 真实 DeepSeek 对话一次，`agent/transcripts.json` 记录 user/assistant/toolCalls；`/api/v1/agent/sessions` 可读 |
 | 浏览器验收 | **187 项 PASS / 0 FAIL**，0 console/page error；六页 + 角色三态 + 中英 + 390×844 移动端；展会详情含国家/省/市/区县与可点击官网/来源 URL（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
 | API 验收 | **175 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式契约）（见 `evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`） |
-| 测试/构建 | `npm test` 230/230；`npm run build` 通过 |
+| 测试/构建 | `npm test` 234/234；`npm run build` 通过 |
 | 生产模式 | 带同源 Origin：`/health` 200、`/` 构建产物、`/assets/*.js|css` 200、SPA 回退、`/api/v1/workspace` 200；`evil.test` Origin 访问 API 403（见 `evidence/task-loop/PRODUCTION_CHECK_2026-11-03.md`） |
 
 ## 未完成 / 半成品（不要当成已交付）
@@ -181,6 +182,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 - **Agent 能力默认全开**：文件读写/Shell/MCP/Skills/插件默认启用；T0 可显式关闭。
 - **地理用存储表**：国家/省/市/区县来自 `seed/geo-cn.json` 的城市/展馆表，不用名称正则猜测。
 - **官网补全**：enrich 先查已有官网/来源；没有时用搜索候选，抓取并匹配事件名后才写入官网，优先站点首页。
+- **境外自办展**：名称里的"中国"表示主办/货源地，括号里的国家/城市才是举办地；按存储地理表归类，不按名称关键词猜国内。
 - **展会资料只列事实与来源**，不提供"推荐参展/不参展"。
 - **来源是网址注册表**，不是已抓内容；研究和采集分开存储。
 
@@ -201,6 +203,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 13. **展会 enrich 可能抽到上一届日期**：会写 notes 提示"下一届待确认"，未来筛选时注意。
 15. **官网候选不等于官网**：搜索候选只有抓取页面且标题/字段匹配事件名后才写入 `website`；抓不到时写入 `官网候选（待人工确认）` note。人工修正优先。
 16. **地理推断依赖 seed/geo-cn.json**：新增展会城市/展馆时先补表；旧数据升级后跑 `npm run event:backfill-geo`（需停服务）。
+17. **"中国（X）"不代表在中国**：境外自办展名称里的中国是主办方/货源地；geo 会按括号国家/城市归类为境外并写 note。新增国家/城市时补 `seed/geo-cn.json` 的 countries/cities。
 14. **单 `.local/` 只能一个进程**：两个实例会互相覆盖 JSON 与队列。
 
 ## 接手第一小时
@@ -208,7 +211,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 ```bash
 cd domel-market-intelligence
 npm ci
-npm test                       # 期望 230 passed
+npm test                       # 期望 234 passed
 npm run build
 npm run demo:api               # API 8788
 npm run dev                    # 前端 5174
