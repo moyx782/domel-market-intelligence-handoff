@@ -878,11 +878,19 @@ export function createCollector({
 
  function abortableCall(promise, signal) {
   if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(abortedError('browser render'));
+  // Arguments are evaluated before this call, so the underlying Playwright
+  // promise may have started already. Always attach a handler: otherwise an
+  // already-aborted signal leaves the in-flight page call unhandled and its
+  // later rejection (page closed by the finally block) kills the API process.
+  const underlying = Promise.resolve(promise);
+  if (signal.aborted) {
+   underlying.catch(() => {});
+   return Promise.reject(abortedError('browser render'));
+  }
   return new Promise((resolve, reject) => {
    const onAbort = () => reject(abortedError('browser render'));
    signal.addEventListener('abort', onAbort, {once: true});
-   Promise.resolve(promise).then(
+   underlying.then(
     value => { signal.removeEventListener('abort', onAbort); resolve(value); },
     error => { signal.removeEventListener('abort', onAbort); reject(error); },
    );
