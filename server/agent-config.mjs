@@ -14,7 +14,8 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 
 const DEFAULT_CLI={enabled:true,allowBash:true};
-const EMPTY={role:'admin',cli:DEFAULT_CLI,skills:[],plugins:[],ocr:{provider:'none',localUrl:'',officialBase:'',token:''}};
+const DEFAULT_LLM={apiKey:'',model:'',baseUrl:''};
+const EMPTY={role:'admin',cli:DEFAULT_CLI,skills:[],plugins:[],ocr:{provider:'none',localUrl:'',officialBase:'',token:''},llm:DEFAULT_LLM};
 const NAME=/^[a-zA-Z0-9_-]{1,40}$/;
 const EXPOSURES=new Set(['direct','codemode','deferred','hidden']);
 
@@ -66,6 +67,10 @@ export function openAgentStore(root){
  config.cli={...DEFAULT_CLI,...(config.cli||{})};
  config.ocr={provider:'none',localUrl:'',officialBase:'',token:'',...(config.ocr||{})};
  config.ocr.token=String(config.ocr.token||'');
+ config.llm={...DEFAULT_LLM,...(config.llm||{})};
+ config.llm.apiKey=String(config.llm.apiKey||'');
+ config.llm.model=String(config.llm.model||'');
+ config.llm.baseUrl=String(config.llm.baseUrl||'');
 
  for(const entry of readdirSync(skillsDir,{withFileTypes:true})){
   if(!entry.isDirectory())continue;
@@ -128,6 +133,10 @@ export function openAgentStore(root){
    config.cli={...DEFAULT_CLI,...(parsed.cli||{})};
    config.ocr={provider:'none',localUrl:'',officialBase:'',token:'',...(parsed.ocr||{})};
    config.ocr.token=String(config.ocr.token||'');
+   config.llm={...DEFAULT_LLM,...(parsed.llm||{})};
+   config.llm.apiKey=String(config.llm.apiKey||'');
+   config.llm.model=String(config.llm.model||'');
+   config.llm.baseUrl=String(config.llm.baseUrl||'');
    configMtime=stat.mtimeMs;
   }catch{}
  }
@@ -178,6 +187,7 @@ export function openAgentStore(root){
      ...(admin?{}:{env:mask(server.env),headers:mask(server.headers)}),
     })),
     ocr:{provider:config.ocr.provider,localUrl:config.ocr.localUrl,officialBase:config.ocr.officialBase,tokenSet:Boolean(config.ocr.token)},
+    llm:{model:config.llm.model,baseUrl:config.llm.baseUrl,tokenSet:Boolean(config.llm.apiKey)},
     skills:config.skills.map(skill=>({...skill,path:skillPath(skill),...(admin?{content:readSkillBody(skill)}:{})})),
     plugins:config.plugins.map(plugin=>({...plugin,path:join(extensionsDir,plugin.slug)})),
    };
@@ -337,6 +347,8 @@ export function openAgentStore(root){
 
   ocr(){refreshSettings();return structuredClone(config.ocr);},
 
+  llm(){refreshSettings();return structuredClone(config.llm);},
+
   setSettings(patch,{allowCli=true}={}){
    if(patch.ocr!==undefined){
     const next={...config.ocr};
@@ -360,6 +372,29 @@ export function openAgentStore(root){
     }
     config.ocr=next;
    }
+   if(patch.llm!==undefined){
+    const next={...config.llm};
+    if(patch.llm.apiKey!==undefined){
+     const token=String(patch.llm.apiKey);
+     if(token.length>2000)throw Error('AI API key is too long');
+     next.apiKey=token;
+    }
+    if(patch.llm.model!==undefined){
+     const model=String(patch.llm.model||'').trim();
+     if(model.length>120)throw Error('AI model name is too long');
+     next.model=model;
+    }
+    if(patch.llm.baseUrl!==undefined){
+     const value=String(patch.llm.baseUrl||'').trim();
+     if(value){
+      let url;
+      try{url=new URL(value);}catch{throw Error('AI base URL is not a valid URL');}
+      if(url.protocol!=='https:'&&url.protocol!=='http:')throw Error('AI base URL must use http or https');
+      next.baseUrl=url.href.replace(/\/$/,'');
+     }else next.baseUrl='';
+    }
+    config.llm=next;
+   }
    if(patch.role!==undefined){
     if(!['viewer','user','admin','system'].includes(patch.role))throw Error('Invalid role');
     config.role=patch.role;
@@ -370,7 +405,7 @@ export function openAgentStore(root){
     if(typeof patch.cli.allowBash==='boolean')config.cli.allowBash=patch.cli.allowBash;
    }
    persistConfig();
-   return {role:config.role,cli:structuredClone(config.cli),ocr:structuredClone(config.ocr)};
+   return {role:config.role,cli:structuredClone(config.cli),ocr:structuredClone(config.ocr),llm:structuredClone(config.llm)};
   },
 
   enabledSkillPaths(){

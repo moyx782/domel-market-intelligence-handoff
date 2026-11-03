@@ -398,3 +398,19 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
    "中国"是主办方/货源地，括号里的国家和城市才是举办地。`server/geo.mjs` 解析名称括号，
    命中存储的国家/城市后把事件归到 `global`/`eu` 区域并在 notes 说明；已入库的旧记录在
    enrich 时自动纠正。测试 `tests/event-jobs-overseas.test.mjs`；全量测试 234。
+
+## 18. 迭代（2026-11-03）：UI 配置 AI 模型
+
+用户要求“本地部署的 AI 可填入提供自定义方式”。实现：
+
+1. 设置页新增 **AI 模型** 区块（admin）：API Key（只写不读）、模型名、Base URL。
+   保存在 `.local/agent-config.json`（0600），优先于 `.env.host`；保存后懒加载重建
+   模型会话，无需重启。
+2. Base URL 为空或 `api.deepseek.com` → DeepSeek 官方；其他地址视为 OpenAI 兼容的
+   本地部署（Ollama/vLLM/LM Studio/内网网关），Agent、只读助手、抽取都切到该模型。
+   本地模型没有 DeepSeek search/fetch 工具，展会发现退回注册表扫描、补全跳过官网搜索。
+3. 研究抽取通过同步 `AI_BASE_URL/AI_API_KEY/AI_MODEL` 使用自定义模型；可用
+   `CUSTOM_AI_CONTEXT_WINDOW` / `CUSTOM_AI_MAX_TOKENS` 调整本地模型上下文。
+4. 测试 `tests/llm-settings.test.mjs`（配置存储/脱敏、admin/viewer 权限、capabilities、
+   运行期取 key、custom provider 构建）；全量 239。验收：浏览器 193、API 179，
+   0 console/page error。

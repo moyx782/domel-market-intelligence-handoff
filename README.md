@@ -18,6 +18,7 @@
 | 展会资料库：`event.discover` / `event.enrich`、官网自动查找、去重合并、文档可获取性、CSV/JSON 导出 | ✅ |
 | 展会地理层级：国家/省/市/区县从存储的城市表推断（`seed/geo-cn.json`），不用名称猜测 | ✅ |
 | 境外自办展识别：`中国（阿联酋）贸易博览会` 这类名称按括号国家归为境外展会（region=global/eu），不误判为中国 | ✅ |
+| AI 模型设置：设置页可填 DeepSeek Key/模型/Base URL（只写不读），也支持本地部署的 OpenAI 兼容模型（Ollama/vLLM/LM Studio 等） | ✅ |
 | 展会页（首页）：列表/时间轴、筛选、详情、发现/补全/手动修正/导出 | ✅ |
 | 来源页、Settings 的 MCP/Skills/Plugins/Recipes 管理 | ✅ |
 | Agent 页：SSE 对话、工具卡片、可中断、运行历史；viewer 只读历史 | ✅ |
@@ -49,8 +50,10 @@ npm run dev             # 前端: http://127.0.0.1:5174
 4. **Agent**：与 Pi Agent 对话（文件工具/Shell/MCP/Skills/插件），历史可回看。
 5. **设置**：角色、Agent 工具开关、MCP/Skills/Plugins/Recipes、MinerU OCR。
 
-没有 `.env.host` 时：页面可用、审核与报告可用，但研究/展会发现/Agent 会返回配置错误；
-来源采集仍可用（不需要模型）。
+没有 `.env.host` 时：页面、来源采集、审核与报告可用；AI 功能（研究/展会发现/补全/Agent）
+需要 Key。Key 可以放在 `.env.host`，也可以由 admin 在 **设置 → AI 模型** 里填写
+（只写不读、服务端 0600 保存、保存后即时生效，无需重启）。本地部署的模型（Ollama/vLLM/
+LM Studio 等）在 Base URL 填其 OpenAI 兼容地址即可。
 
 局域网演示：`npm run demo:lan`（API+前端都绑 0.0.0.0，打印地址；无认证，只在可信网络用）。
 Docker/systemd 与内网部署见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
@@ -64,7 +67,7 @@ Docker/systemd 与内网部署见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 | 来源 | 注册表表格（URL/类型/地区/优先级/间隔/下次运行/状态）；开关、立即运行；admin 增删改、user 只能开关、viewer 只读 |
 | 项目 | 研究项目列表 → 进度/证据/审核/报告；保留只读助手 |
 | Agent | 项目/通用工作区对话、工具卡片、中途中止、运行历史（viewer 只读） |
-| 设置 | 角色三态、Agent 工具（T0 可写）、MCP（raw JSON/连接测试）、Skills、Plugins、Recipes 审批、MinerU OCR |
+| 设置 | 角色三态、Agent 工具（T0 可写）、**AI 模型（DeepSeek / 本地 OpenAI 兼容）**、MCP（raw JSON/连接测试）、Skills、Plugins、Recipes 审批、MinerU OCR |
 
 中英双语即时切换；移动端 390×844 可用。
 
@@ -104,7 +107,7 @@ seed/geo-cn.json          国家/省/市/区县与展馆地理表（展会地点
 ## 测试与验收
 
 ```bash
-npm test                        # 234 个 Node 测试
+npm test                        # 239 个 Node 测试
 npm run build                   # tsc + vite
 
 # 独立验收（isolated data dir，脚本头注释有完整命令）：
@@ -120,9 +123,9 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 
 验收结果（2026-11-03，独立验收环境）：
 
-- 浏览器：**187 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
+- 浏览器：**193 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
   + 390×844 移动端。清单与截图：`evidence/ui-acceptance/`。
-- API：**175 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式
+- API：**179 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式
   契约）。日志：`evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`。
 - 生产模式：单进程 `SERVE_STATIC=1` 下 `/`、`/assets/*`、SPA 回退、`/api/v1/workspace`
   带同源 Origin 全部 200，`evil.test` Origin 访问 API 403；见

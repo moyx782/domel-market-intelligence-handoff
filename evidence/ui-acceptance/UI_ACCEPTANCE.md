@@ -13,7 +13,7 @@ Acceptance member: qa-verify (independent; no business code was modified during 
 
 ## Result
 
-**187 browser checks passed, 0 failed, 0 console errors, 0 page errors.**
+**193 browser checks passed, 0 failed, 0 console errors, 0 page errors.**
 
 Command:
 
@@ -221,12 +221,22 @@ Re-run results on the same frozen scripts (data isolated in `/tmp/lead-final2`):
 
 | Check | Result |
 |---|---|
-| Browser acceptance `scripts/ui-acceptance.mjs` | **187 PASS / 0 FAIL**, 0 console/page errors |
-| API acceptance `scripts/acceptance-api.mjs` | **175 PASS / 0 FAIL** (one extra check: CSV now has province/district) |
+| Browser acceptance `scripts/ui-acceptance.mjs` | **193 PASS / 0 FAIL**, 0 console/page errors |
+| API acceptance `scripts/acceptance-api.mjs` | **179 PASS / 0 FAIL** (province/district CSV + AI model masking/capabilities checks) |
 | Production HTTP (`SERVE_STATIC=1`, same-origin Origin) | `/`, `/assets/*.js|css`, SPA fallback, `/api/v1/workspace` 200; evil Origin 403 |
 | Production browser E2E | Event calendar renders, SPA fallback renders, 0 console/page errors |
-| `npm test` | **230/230** |
+| `npm test` | **239/239** |
 
 The final-iteration logs overwrite the same evidence files
 (`evidence/task-loop/UI_ACCEPTANCE_2026-11-03.log`, `API_ACCEPTANCE_2026-11-03.log`,
 `PRODUCTION_HTTP_2026-11-03.log`, `PRODUCTION_BROWSER_2026-11-03.log`).
+
+## AI model settings (last UI iteration)
+
+The Settings page gained an **AI model** section (admin): API key (write-only), model name and
+base URL, so a DeepSeek key can be entered from the browser and a locally deployed
+OpenAI-compatible model (Ollama/vLLM/LM Studio/internal gateway) can be used instead. The
+acceptance re-run covers: the section is present for admin and viewer, the active
+environment-configured model is shown without exposing the key, the key input is never
+prefilled, and viewer controls are disabled. Counts above (193 browser / 179 API) are from
+that re-run; `tests/llm-settings.test.mjs` covers the server side.

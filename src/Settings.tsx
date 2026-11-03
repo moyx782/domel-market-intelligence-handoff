@@ -5,7 +5,7 @@
 import {useCallback,useEffect,useState} from 'react';
 import type {FormEvent} from 'react';
 import {
- AlertCircle, BookOpen, Check, KeyRound, LoaderCircle, Plus, Puzzle,
+ AlertCircle, BookOpen, Check, Cpu, KeyRound, LoaderCircle, Plus, Puzzle,
  RefreshCw, Save, Server, ShieldCheck, Terminal, Trash2, Wrench, X,
 } from 'lucide-react';
 import {
@@ -36,6 +36,12 @@ export default function Settings({onRoleChanged}: {onRoleChanged?: () => void}) 
  const [endpoint, setEndpoint] = useState('');
  const [token, setToken] = useState('');
  const [clearToken, setClearToken] = useState(false);
+
+ // AI model (DeepSeek or a locally deployed OpenAI-compatible server)
+ const [llmModel, setLlmModel] = useState('');
+ const [llmBaseUrl, setLlmBaseUrl] = useState('');
+ const [llmKey, setLlmKey] = useState('');
+ const [clearLlmKey, setClearLlmKey] = useState(false);
  const [role, setRole] = useState<Role>('admin');
  const [cliEnabled, setCliEnabled] = useState(true);
  const [cliBash, setCliBash] = useState(true);
@@ -86,6 +92,8 @@ export default function Settings({onRoleChanged}: {onRoleChanged?: () => void}) 
    setEndpoint(nextProvider === 'local'
     ? (next.ocr?.localUrl || 'http://127.0.0.1:8000')
     : (nextProvider === 'official' ? (next.ocr?.officialBase || 'https://mineru.net/api/v4') : ''));
+   setLlmModel(next.llm?.model || '');
+   setLlmBaseUrl(next.llm?.baseUrl || '');
    setSkillDrafts(Object.fromEntries(next.skills.map(skill => [skill.id, {
     name: skill.name, description: skill.description, content: skill.content ?? '',
    }])));
@@ -170,6 +178,22 @@ export default function Settings({onRoleChanged}: {onRoleChanged?: () => void}) 
    await updateAgentSettings({cli: {enabled: cliEnabled, allowBash: cliBash}});
    await load();
    notify(t('Tools updated'));
+  });
+ }
+
+ async function saveLlm() {
+  await run('llm', async () => {
+   const llm: {model?: string; baseUrl?: string; apiKey?: string} = {
+    model: llmModel.trim(),
+    baseUrl: llmBaseUrl.trim(),
+   };
+   if (clearLlmKey) llm.apiKey = '';
+   else if (llmKey.trim()) llm.apiKey = llmKey.trim();
+   await updateAgentSettings({llm});
+   setLlmKey('');
+   setClearLlmKey(false);
+   await load();
+   notify(t('AI model settings saved.'));
   });
  }
 
@@ -444,6 +468,30 @@ export default function Settings({onRoleChanged}: {onRoleChanged?: () => void}) 
     </label>
    </div>
    {isSystem && <div className="review-actions"><button className="primary" onClick={() => void saveCli()} disabled={busy === 'cli'}><Save size={16}/>{t('Save tools')}</button></div>}
+  </section>
+
+  <section className="panel padded">
+   <div className="settings-section-head"><Cpu size={18}/><div><h2>{t('AI model')}</h2><p>{t('Configure an API key for DeepSeek or any OpenAI-compatible model server. Local deployments can point the base URL at their own gateway.')}</p></div></div>
+   <div className="settings-grid">
+    <label>{t('Model name')}
+     <input value={llmModel} onChange={event => setLlmModel(event.target.value)} placeholder="deepseek-flash" disabled={!isAdmin}/>
+    </label>
+    <label>{t('Base URL')}
+     <input value={llmBaseUrl} onChange={event => setLlmBaseUrl(event.target.value)} placeholder="https://api.deepseek.com / http://127.0.0.1:11434/v1" disabled={!isAdmin}/>
+    </label>
+    <label>{t('API key')}
+     <input type="password" value={llmKey} onChange={event => { setLlmKey(event.target.value); }} autoComplete="new-password" placeholder={(config.llm?.keySet || config.llm?.envKeySet) ? t('Configured — leave blank to keep') : t('Not configured')} disabled={!isAdmin}/>
+    </label>
+   </div>
+   <p className="small">{t('Leave blank to use the server environment (.env.host). For Ollama/vLLM/LM Studio use the OpenAI-compatible base URL, e.g. http://127.0.0.1:11434/v1.')}</p>
+   <p className="small">{t('The key is stored server-side and never returned to the browser. A custom base URL switches the agent and extraction to that model.')}</p>
+   <p className="small">{config.llm?.effectiveConfigured
+    ? t('Current provider: {provider} · {model}', {provider: config.llm.provider === 'custom' ? t('Custom / local OpenAI-compatible') : t('DeepSeek official'), model: config.llm.model || '-'})
+    : t('Not configured')}</p>
+   {isAdmin && <div className="review-actions">
+    <button className="primary" onClick={() => void saveLlm()} disabled={busy === 'llm'}><Save size={16}/>{t('Save model settings')}</button>
+    {(config.llm?.keySet) && <button className="secondary" onClick={() => setClearLlmKey(true)} disabled={busy === 'llm'}>{t('Clear key')}</button>}
+   </div>}
   </section>
 
   <section className="panel padded">

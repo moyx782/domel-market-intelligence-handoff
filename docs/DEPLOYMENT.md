@@ -54,6 +54,11 @@ LOCAL_API_BIND=0.0.0.0 LOCAL_API_PORT=8788 SERVE_STATIC=1 npm run start
 
 **地理/官网数据**：展会国家/省/市/区县来自 `seed/geo-cn.json` 存储表（升级仓库后如需要可停服务运行 `npm run event:backfill-geo` 补齐旧事件）。展会补全会在没有官网时通过 DeepSeek Web Search 找候选并抓取核验。
 
+**AI 密钥**：可写 `.env.host` 的 `DEEPSEEK_API_KEY`，也可由 admin 在 **设置 → AI 模型**
+里填写（只写不读、`.local/agent-config.json` 0600、优先于环境变量、保存后即时生效）。
+本地部署的模型（Ollama/vLLM/LM Studio 等）在 Base URL 填 OpenAI 兼容地址即可；
+此时没有 DeepSeek search/fetch 工具，展会发现退回来源注册表扫描。
+
 **采集器需要浏览器**：HTTP 抓取不需要任何东西；JS 壳页面回退 Playwright 时使用系统 Chrome（`CHROME_PATH` 或 `/usr/bin/google-chrome`）。服务器上没有 Chrome 时采集器仍能工作（只做 HTTP/Readability），只是缺少 JS 渲染回退。
 
 systemd：

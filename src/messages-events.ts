@@ -330,4 +330,19 @@ registerMessages({
  'Saved': '已保存',
  'Loading…': '加载中…',
  'Unknown': '未知',
+
+ // AI model settings (DeepSeek or a locally deployed OpenAI-compatible server)
+ 'AI model': 'AI 模型',
+ 'Configure an API key for DeepSeek or any OpenAI-compatible model server. Local deployments can point the base URL at their own gateway.': '为 DeepSeek 或任意 OpenAI 兼容模型服务配置 API Key；本地部署可把 Base URL 指向自己的网关。',
+ 'Model name': '模型名称',
+ 'Base URL': '服务地址',
+ 'API key': 'API 密钥',
+ 'Leave blank to use the server environment (.env.host). For Ollama/vLLM/LM Studio use the OpenAI-compatible base URL, e.g. http://127.0.0.1:11434/v1.': '留空则使用服务器环境变量（.env.host）；Ollama/vLLM/LM Studio 等请填 OpenAI 兼容地址，例如 http://127.0.0.1:11434/v1。',
+ 'The key is stored server-side and never returned to the browser. A custom base URL switches the agent and extraction to that model.': '密钥保存在服务端，浏览器永不回读明文；填写自定义 Base URL 后 Agent 与抽取会切换到该模型。',
+ 'Save model settings': '保存模型设置',
+ 'AI model settings saved.': 'AI 模型设置已保存。',
+ 'Current provider: {provider} · {model}': '当前服务：{provider} · {model}',
+ 'DeepSeek official': 'DeepSeek 官方',
+ 'Custom / local OpenAI-compatible': '自定义 / 本地 OpenAI 兼容',
+ 'Clear key': '清除密钥',
 });

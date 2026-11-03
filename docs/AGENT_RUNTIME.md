@@ -17,6 +17,30 @@ or versioned.
   workspaces/<project|general>/  agent working directory
 ```
 
+## AI model settings (deepseek or a local model)
+
+Admin → Settings → **AI model** configures the model used by the research
+assistant, the Agent page and extraction:
+
+| Field | Meaning |
+|---|---|
+| Model name | e.g. `deepseek-flash`, or the model id served by your local server (`qwen2.5`, `llama3.1` …) |
+| Base URL | blank/`https://api.deepseek.com` = DeepSeek official; anything else is treated as an OpenAI-compatible endpoint (`http://127.0.0.1:11434/v1`, `http://vllm.internal:8000/v1`, …) |
+| API key | write-only: stored in `.local/agent-config.json` (0600), never returned by the API; leave blank to keep, clear to fall back to `.env.host` |
+
+Priority: Settings value > `.env.host` environment. Saving rebuilds the model
+runtime lazily, so the key works without restarting the process. A custom Base
+URL switches the assistant/agent/extraction to that local model; because local
+models have no DeepSeek search/fetch tools, discovery falls back to the source
+registry scan and enrichment skips the official-website web search. Set
+`CUSTOM_AI_CONTEXT_WINDOW` / `CUSTOM_AI_MAX_TOKENS` in the environment when the
+local model needs a larger context.
+
+```bash
+# example: Ollama serving an OpenAI-compatible API
+curl -s http://127.0.0.1:8788/api/v1/agent/settings   -H 'Content-Type: application/json'   -d '{"llm":{"baseUrl":"http://127.0.0.1:11434/v1","model":"qwen2.5","apiKey":""}}'
+```
+
 ## Roles (four tiers)
 
 `viewer(0) < user(1) < admin(2) < system(3)`. `system` (T0) can only be set from the local

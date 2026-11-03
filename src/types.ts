@@ -142,6 +142,15 @@ export type McpTestResult = {ok:boolean;tools?:{name:string;description?:string}
 export type AgentSkill = {id:string;slug:string;name:string;description:string;enabled:boolean;path?:string;content?:string};
 export type AgentPlugin = {id:string;slug:string;name:string;enabled:boolean;path?:string;file?:string};
 export type OcrConfig = {provider:'none' | 'official' | 'local';localUrl:string;officialBase:string;tokenSet:boolean};
+export type LlmConfig = {
+ model:string;
+ baseUrl:string;
+ provider?:'deepseek' | 'custom';
+ tokenSet?:boolean;
+ keySet?:boolean;
+ envKeySet?:boolean;
+ effectiveConfigured?:boolean;
+};
 export type AgentConfig = {
  role:Role;
  cli:{enabled:boolean;allowBash:boolean};
@@ -149,6 +158,7 @@ export type AgentConfig = {
  skills:AgentSkill[];
  plugins:AgentPlugin[];
  ocr:OcrConfig;
+ llm:LlmConfig;
 };
 export type AgentToolCall = {tool:string;ok:boolean;args?:string};
 export type AgentTranscriptMessage = {role:'user' | 'assistant';text:string;at:string;toolCalls?:AgentToolCall[]};

@@ -738,9 +738,9 @@ try {
  await successNotice('Source updated');
 
  // ============================================================= settings
- section('Settings: seven sections, OCR, MCP/skills/plugins/recipes three states');
+ section('Settings: eight sections, AI model, OCR, MCP/skills/plugins/recipes three states');
  await gotoPage('Settings', 'Settings');
- for (const heading of ['Role & access', 'Agent tools', 'Document parsing', 'MCP servers', 'Skills', 'Plugins', 'Recipes']) {
+ for (const heading of ['Role & access', 'Agent tools', 'AI model', 'Document parsing', 'MCP servers', 'Skills', 'Plugins', 'Recipes']) {
   check('settings section present: ' + heading, await page.getByRole('heading', {name: heading, exact: true}).count() === 1);
  }
  equal('workspace role selector shows admin', await page.getByLabel('Workspace role').inputValue(), 'admin');
@@ -752,6 +752,14 @@ try {
  equal('OCR local provider fills the local endpoint', await page.getByLabel('API endpoint').inputValue(), 'http://127.0.0.1:8000');
  await page.getByLabel('OCR provider').selectOption('none');
  check('OCR endpoint is disabled when the provider is none', await page.getByLabel('API endpoint').isDisabled());
+
+ // AI model settings: the acceptance environment uses the .env.host key, so the
+ // panel must report it as configured without exposing the key. The key input
+ // is write-only and never prefilled.
+ equal('AI model shows the active model name', await page.getByLabel('Model name').inputValue(), 'deepseek-flash');
+ check('AI model reports an environment-configured key', String(await page.getByLabel('API key').getAttribute('placeholder')).includes('Configured'));
+ check('AI model status names the provider', /DeepSeek official/.test(await page.locator('.settings-page section.panel.padded').filter({hasText: 'AI model'}).innerText()));
+ check('AI key input is never prefilled with the real key', (await page.getByLabel('API key').inputValue()) === '');
  await shot('26-settings-admin');
 
  const mcpRow = page.locator('.settings-row').filter({hasText: 'qa-acceptance-mcp'}).first();
@@ -808,8 +816,8 @@ try {
  await api('/api/v1/agent/mcp/qa-ui-mcp', {method: 'DELETE'});
 
  await page.getByRole('button', {name: 'Add skill'}).click();
- await page.getByLabel('Name').fill('QA UI skill');
- await page.getByLabel('Description').fill('Temporary UI skill');
+ await page.getByLabel('Name', {exact: true}).fill('QA UI skill');
+ await page.getByLabel('Description', {exact: true}).fill('Temporary UI skill');
  await page.getByLabel('Skill content').fill('Check the trade show dates against the official website.');
  await page.locator('form.settings-editor').getByRole('button', {name: 'Add skill'}).click();
  let skillAdded = true;
@@ -961,10 +969,11 @@ try {
 
  await gotoPage('Settings', 'Settings');
  await waitForText('.alert', 'Only admins can change');
- check('viewer settings page keeps all seven sections', await page.locator('section.panel.padded').count() === 7, String(await page.locator('section.panel.padded').count()));
+ check('viewer settings page keeps all eight sections', await page.locator('section.panel.padded').count() === 8, String(await page.locator('section.panel.padded').count()));
  check('viewer sees the admin-only settings banner', /Only admins can change/.test(await page.locator('.alert').first().innerText()));
  check('viewer role selector is disabled', await page.getByLabel('Workspace role').isDisabled());
  check('viewer OCR provider is disabled', await page.getByLabel('OCR provider').isDisabled());
+ check('viewer AI model controls are disabled', await page.getByLabel('Model name').isDisabled() && await page.getByLabel('Base URL').isDisabled() && await page.getByLabel('API key').isDisabled());
  check('viewer sees no MCP add/remove/test actions', await page.getByRole('button', {name: 'Add MCP server'}).count() === 0 && await page.locator('button[aria-label^="Remove MCP server"]').count() === 0 && await page.getByRole('button', {name: 'Test connection'}).count() === 0);
  check('viewer MCP enable toggle is disabled', await page.locator('input[aria-label="Enable MCP server qa-acceptance-mcp"]').isDisabled());
  check('viewer sees no skill add/edit/remove actions', await page.getByRole('button', {name: 'Add skill'}).count() === 0 && await page.locator('button[aria-label^="Remove skill"]').count() === 0);

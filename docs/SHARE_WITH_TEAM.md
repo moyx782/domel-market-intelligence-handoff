@@ -72,10 +72,14 @@ DeepSeek key / MinerU token，单独私发。
 
 ```bash
 npm ci
-cp .env.host.example .env.host      # 然后填入 DEEPSEEK_API_KEY（找 Lead 私下要）
+cp .env.host.example .env.host      # 可选：也可以启动后在「设置 → AI 模型」里填 Key
 npm run demo:api                     # API: http://127.0.0.1:8788（含任务队列/调度器）
 npm run dev                          # 前端: http://127.0.0.1:5174
 ```
+
+AI Key 可以走 `.env.host`，也可以由 admin 在设置页 **AI 模型** 里填写（只写不读，
+即时生效，优先于环境变量）。本地部署模型（Ollama/vLLM/LM Studio 等）把 Base URL
+填成其 OpenAI 兼容地址即可，例如 `http://127.0.0.1:11434/v1`。
 
 打开 http://127.0.0.1:5174 ：默认是**展会**首页（中国区、未来 12 个月、日期待确认的事件也会显示）。
 

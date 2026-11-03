@@ -317,6 +317,18 @@ async function run() {
   equal('capabilities.execution is local-single-user', capabilities.json?.execution, 'local-single-user');
   check('capabilities.agent_role is a valid role', ROLE_NAMES.includes(capabilities.json?.agent_role), String(capabilities.json?.agent_role));
   check('task file is the isolated acceptance data dir', String(capabilities.json?.queue?.file || '').endsWith(join('domel-acceptance', 'tasks.json')) || String(capabilities.json?.queue?.file || '').includes(DATA_DIR), String(capabilities.json?.queue?.file));
+  const aiConfigCheck = await request('/api/v1/agent/config');
+  equal('GET /api/v1/agent/config returns 200', aiConfigCheck.status, 200);
+  check('agent config exposes masked AI model settings',
+   Boolean(aiConfigCheck.json?.llm) && typeof aiConfigCheck.json.llm.tokenSet === 'boolean'
+    && typeof aiConfigCheck.json.llm.model === 'string' && !/sk-[A-Za-z0-9]{16,}/.test(aiConfigCheck.text),
+   JSON.stringify(aiConfigCheck.json?.llm ?? null));
+  check('capabilities expose the AI provider and base URL',
+   Boolean(capabilities.json?.llm) && ['deepseek', 'custom'].includes(capabilities.json.llm.provider)
+    && typeof capabilities.json.llm.baseUrl === 'string',
+   JSON.stringify(capabilities.json?.llm ?? null));
+  const invalidLlm = await request('/api/v1/agent/settings', {method: 'PATCH', body: {llm: {baseUrl: 'ftp://example.com'}}});
+  check('invalid AI base URL is rejected', invalidLlm.status === 409, 'HTTP ' + invalidLlm.status);
   const workspace = await request('/api/v1/workspace');
   equal('GET /api/v1/workspace returns 200', workspace.status, 200);
   check('workspace has at least one project', (workspace.json?.projects ?? []).length >= 1, String((workspace.json?.projects ?? []).length));

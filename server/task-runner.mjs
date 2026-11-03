@@ -55,6 +55,7 @@ export function createTaskRunner({
  geo: injectedGeo,
  eventJobs: injectedEventJobs,
  researchRunner: injectedResearch,
+ getLlm,
  now = () => Date.now(),
 }) {
  const registry = injectedRegistry ?? openSourceRegistry({
@@ -68,6 +69,18 @@ export function createTaskRunner({
  const eventStore = injectedEventStore ?? openEventStore({file: env.EVENTS_FILE || join(dataDir, 'events.json')});
  const researchRunner = injectedResearch ?? createResearchRunner({store, env});
  const company = loadCompanyProfile(env.COMPANY_SEED_FILE || 'seed/company-domel.json');
+ const llmState = () => {
+  if (typeof getLlm === 'function') return getLlm();
+  const baseUrl = env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+  let official = true;
+  try { official = new URL(baseUrl).hostname === 'api.deepseek.com' || new URL(baseUrl).hostname.endsWith('.deepseek.com'); } catch {}
+  return {
+   key: env.DEEPSEEK_API_KEY || '',
+   model: env.DEEPSEEK_MODEL || 'deepseek-flash',
+   baseUrl,
+   provider: official ? 'deepseek' : 'custom',
+  };
+ };
  // Stored geography (country/province/city/district) for event inference.
  const geo = injectedGeo ?? openGeoIndex({file: env.GEO_FILE || 'seed/geo-cn.json'});
 
@@ -80,37 +93,49 @@ export function createTaskRunner({
  }
 
  // Search is injected into the event jobs: the model adapter is preferred, and
- // without a model we scan the human-curated registry pages. The registry scan
- // is memoised because discovery asks once per generated query but the scan
- // itself is the same few pages; tests can still replace the adapter.
- const registryScan = env.DEEPSEEK_API_KEY ? null : createRegistryScanSearch({registry, collector, company, geo});
+ // without a model (or with a self-hosted model that has no DeepSeek search
+ // tool) we scan the human-curated registry pages. The registry scan is
+ // memoised because discovery asks once per generated query but the scan itself
+ // is the same few pages. Keys/models are resolved per call so a key entered in
+ // Settings takes effect without restarting the process.
+ const registryScan = createRegistryScanSearch({registry, collector, company, geo});
  let registryScanOnce = null;
- // Event jobs expect a plain function; adapters expose {search}. The registry
- // scan is memoised because discovery asks once per generated query but the
- // scan itself is the same few pages.
- const searchAdapter = injectedSearch ?? (env.DEEPSEEK_API_KEY
-  ? createDeepSeekEventSearch({
-   apiKey: env.DEEPSEEK_API_KEY,
-   model: env.DEEPSEEK_MODEL || 'deepseek-flash',
-   baseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
-  })
-  : {
-   search(args) {
-    if (!registryScanOnce) registryScanOnce = registryScan.search({region: args?.region, limit: args?.limit});
-    return registryScanOnce;
-   },
-  });
- const search = typeof searchAdapter === 'function' ? searchAdapter : args => searchAdapter.search(args);
+ const deepseekSearch = createDeepSeekEventSearch({
+  getApiKey: () => {
+   const llm = llmState();
+   return llm.provider === 'deepseek' ? llm.key : '';
+  },
+  getModel: () => llmState().model,
+  baseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+ });
+ const externalSearch = typeof injectedSearch === 'function'
+  ? injectedSearch
+  : (injectedSearch && typeof injectedSearch.search === 'function' ? args => injectedSearch.search(args) : null);
+ const search = externalSearch ?? (async args => {
+  const llm = llmState();
+  if (llm.provider === 'deepseek' && llm.key) return deepseekSearch.search(args);
+  if (!registryScanOnce) registryScanOnce = registryScan.search({region: args?.region, limit: args?.limit});
+  return registryScanOnce;
+ });
 
  // Enrichment uses a web search only to find candidate official pages; the
- // fetched page still has to match the event name before it is accepted.
- const webSearchAdapter = injectedWebSearch ?? (env.DEEPSEEK_API_KEY
-  ? createDeepSeekWebSearch({apiKey: env.DEEPSEEK_API_KEY, baseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'})
-  : null);
- // Event jobs expect a plain function (like the discovery search adapter).
- const webSearch = typeof webSearchAdapter === 'function'
-  ? webSearchAdapter
-  : (webSearchAdapter ? args => webSearchAdapter.search(args) : null);
+ // fetched page still has to match the event name before it is accepted. A
+ // self-hosted model has no DeepSeek search tool, so no candidate search runs.
+ const deepseekWebSearch = createDeepSeekWebSearch({
+  getApiKey: () => {
+   const llm = llmState();
+   return llm.provider === 'deepseek' ? llm.key : '';
+  },
+  baseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+ });
+ const externalWebSearch = typeof injectedWebSearch === 'function'
+  ? injectedWebSearch
+  : (injectedWebSearch && typeof injectedWebSearch.search === 'function' ? args => injectedWebSearch.search(args) : null);
+ const webSearch = externalWebSearch ?? (async args => {
+  const llm = llmState();
+  if (llm.provider !== 'deepseek' || !llm.key) return [];
+  return deepseekWebSearch.search(args);
+ });
 
  const eventJobs = injectedEventJobs ?? createEventJobs({
   eventStore,

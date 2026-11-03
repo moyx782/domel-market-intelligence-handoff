@@ -172,16 +172,19 @@ export function rankEventWebsiteResults(event, results, {limit = 3} = {}) {
 // `webSearch` adapter for event enrichment: search results are candidate URLs
 // only, never evidence by themselves. DeepSeek exposes its search tool next to
 // the chat endpoint already used for research.
-export function createDeepSeekWebSearch({apiKey, baseUrl = 'https://api.deepseek.com', fetchImpl = fetch, timeoutMs = 20000}) {
- if (!apiKey) throw Error('DEEPSEEK_API_KEY is not configured');
+export function createDeepSeekWebSearch({apiKey, getApiKey, baseUrl = 'https://api.deepseek.com', fetchImpl = fetch, timeoutMs = 20000}) {
+ const resolveKey = typeof getApiKey === 'function' ? getApiKey : () => apiKey;
+ if (!apiKey && typeof getApiKey !== 'function') throw Error('DEEPSEEK_API_KEY is not configured');
  const endpoint = String(baseUrl).replace(/\/$/, '') + '/v1/tools/search';
  return {
   async search({query, count = 8} = {}) {
+   const activeKey = resolveKey();
+   if (!activeKey) throw Error('DEEPSEEK_API_KEY is not configured');
    const response = await fetchImpl(endpoint, {
     method: 'POST',
     redirect: 'error',
     signal: AbortSignal.timeout(Math.max(3000, timeoutMs)),
-    headers: {Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json'},
+    headers: {Authorization: 'Bearer ' + activeKey, 'Content-Type': 'application/json'},
     body: JSON.stringify({query: String(query ?? ''), count, need_content: false, ori_question: String(query ?? '').slice(0, 128)}),
    });
    if (!response.ok) throw Error('Web search failed (HTTP ' + response.status + ')');
@@ -223,13 +226,17 @@ export function parseJsonContent(content) {
  }
 }
 
-export function createDeepSeekEventSearch({apiKey, model = 'deepseek-flash', baseUrl = 'https://api.deepseek.com', fetchImpl = fetch, timeoutMs = 45000}) {
- if (!apiKey) throw Error('DEEPSEEK_API_KEY is not configured');
+export function createDeepSeekEventSearch({apiKey, getApiKey, model = 'deepseek-flash', getModel, baseUrl = 'https://api.deepseek.com', fetchImpl = fetch, timeoutMs = 45000}) {
+ const resolveKey = typeof getApiKey === 'function' ? getApiKey : () => apiKey;
+ const resolveModel = typeof getModel === 'function' ? getModel : () => model;
+ if (!apiKey && typeof getApiKey !== 'function') throw Error('DEEPSEEK_API_KEY is not configured');
  const endpoint = String(baseUrl).replace(/\/$/, '') + '/chat/completions';
  return {
   async search({query, region = 'cn', limit = 30, signal} = {}) {
+   const activeKey = resolveKey();
+   if (!activeKey) throw Error('DEEPSEEK_API_KEY is not configured');
    const body = {
-    model,
+    model: resolveModel(),
     temperature: 0,
     // The flash model spends output budget on reasoning; a larger budget plus
     // disabled thinking keeps the JSON answer itself complete.
@@ -247,7 +254,7 @@ export function createDeepSeekEventSearch({apiKey, model = 'deepseek-flash', bas
     method: 'POST',
     redirect: 'error',
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    headers: {Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json'},
+    headers: {Authorization: 'Bearer ' + activeKey, 'Content-Type': 'application/json'},
     body: JSON.stringify(body),
    });
    if (!response.ok) {

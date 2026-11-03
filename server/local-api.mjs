@@ -9,7 +9,7 @@ import {createServer} from 'node:http';
 import {pathToFileURL} from 'node:url';
 import {openLocalStore} from './local-store.mjs';
 import {join} from 'node:path';
-import {createAssistantRunner, localReader, openDeepSeekModel} from './assistant.mjs';
+import {createAssistantRunner, isDeepSeekBaseUrl, localReader, openDeepSeekModel} from './assistant.mjs';
 import {openAgentStore} from './agent-config.mjs';
 import {createAgentRuntime} from './agent-runtime.mjs';
 import {testMcpServer} from './mcp-test.mjs';
@@ -42,7 +42,11 @@ function csvCell(value) {
  return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 
-export function localApiServer({store, assistant, agentStore, agentRuntime, transcripts, researchRunner, tasks, env = process.env, environment = 'local', origins = DEFAULT_ORIGINS}) {
+export function localApiServer({
+ store, assistant, agentStore, agentRuntime, transcripts, researchRunner, tasks,
+ env = process.env, environment = 'local', origins = DEFAULT_ORIGINS,
+ resolveAssistant, resolveAgent, getLlm, syncLlm,
+}) {
  const role = () => agentStore?.config().role ?? 'admin';
  const allowed = action => can(role(), action);
  const runResearch = researchRunner ?? createResearchRunner({store, env});
@@ -50,6 +54,37 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
  let running = false;
  const params = req => new URL(req.url, 'http://localhost').searchParams;
  const taskQueue = () => tasks?.queue;
+
+ // Effective AI configuration: Settings overrides .env.host, and a non-DeepSeek
+ // base URL means a locally deployed OpenAI-compatible model.
+ const llmState = () => {
+  if (typeof getLlm === 'function') return getLlm();
+  // Settings values override the process environment; the process-level
+  // resolver in the main entry uses the same precedence.
+  const stored = agentStore?.llm?.() ?? {};
+  const key = stored.apiKey || env.DEEPSEEK_API_KEY || '';
+  const model = stored.model || env.DEEPSEEK_MODEL || 'deepseek-flash';
+  const baseUrl = stored.baseUrl || env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+  return {key, model, baseUrl, provider: isDeepSeekBaseUrl(baseUrl) ? 'deepseek' : 'custom'};
+ };
+ const resolveAssistantNow = typeof resolveAssistant === 'function' ? resolveAssistant : async () => assistant;
+ const resolveAgentNow = typeof resolveAgent === 'function' ? resolveAgent : async () => agentRuntime;
+ const agentConfigPayload = () => {
+  const publicConfig = agentStore.publicConfig();
+  const llm = llmState();
+  return {
+   ...publicConfig,
+   llm: {
+    ...publicConfig.llm,
+    provider: llm.provider,
+    model: llm.model,
+    baseUrl: llm.baseUrl,
+    keySet: Boolean(llm.key),
+    envKeySet: Boolean(env.DEEPSEEK_API_KEY),
+    effectiveConfigured: Boolean(llm.key) || llm.provider === 'custom',
+   },
+  };
+ };
 
  async function drain() {
   if (running) return;
@@ -111,16 +146,17 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
   }
   try {
    if (path === '/api/v1/capabilities' && req.method === 'GET') {
-    const config = extractionConfig(name => env[name]);
     const policy = sourcePolicy(name => env[name]);
+    const llm = llmState();
     return send(200, {
      version: 'local-v1',
      execution: 'local-single-user',
      environment,
-     ai: !!config,
-     search: !!env.DEEPSEEK_API_KEY,
-     assistant: !!assistant,
-     agent: !!agentRuntime,
+     ai: Boolean(llm.key) || llm.provider === 'custom',
+     search: llm.provider === 'deepseek' && Boolean(llm.key),
+     assistant: Boolean(await resolveAssistantNow()),
+     agent: Boolean(await resolveAgentNow()),
+     llm: {provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl, keySet: Boolean(llm.key)},
      agent_role: agentStore?.config().role ?? null,
      ocr: mineruStatus(env, agentStore?.ocr()),
      max_sources: 5,
@@ -147,7 +183,8 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
    if (run && req.method === 'POST') {
     if (!allowed('business:write')) return deny('business:write');
     if (!['collect', 'research', 'extract'].includes(body.mode)) return send(400, {error: 'Invalid research mode'});
-    if (!env.DEEPSEEK_API_KEY) return send(409, {error: 'DEEPSEEK_API_KEY is not configured on this demo host. Research and extraction cannot run.'});
+    const activeLlm = llmState();
+    if (!activeLlm.key) return send(409, {error: 'No AI API key is configured. Add DEEPSEEK_API_KEY to .env.host or fill it in Settings → AI model.'});
     if (body.mode !== 'collect' && !extractionReady(env)) return send(409, {error: 'AI extraction is not configured on this demo host'});
     const job = await store.enqueue(run[1], body.mode);
     // With the durable queue the API only schedules the job: one worker runs
@@ -470,7 +507,8 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
    }
    const chat = path.match(/^\/api\/v1\/research-tasks\/([0-9a-f-]{36})\/assistant$/i);
    if (chat && req.method === 'POST') {
-    if (!assistant) return send(503, {error: 'Research assistant is not configured on this demo host'});
+    const assistantRunner = await resolveAssistantNow();
+    if (!assistantRunner) return send(503, {error: 'Research assistant is not configured on this demo host'});
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     if (!message || message.length > 8000) return send(400, {error: 'Invalid assistant message'});
     res.writeHead(200, {
@@ -487,7 +525,7 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
     req.on('close', () => controller.abort());
     const emit = event => { if (!res.writableEnded) res.write('data: ' + JSON.stringify(event) + '\n\n'); };
     try {
-     await assistant({
+     await assistantRunner({
       reader: localReader(store),
       userId: 'local-user',
       projectId: chat[1],
@@ -516,7 +554,7 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
    }
    if (path === '/api/v1/agent/config' && req.method === 'GET') {
     if (!agentStore) return send(503, {error: 'Agent configuration is not available'});
-    return send(200, agentStore.publicConfig());
+    return send(200, agentConfigPayload());
    }
    if (path === '/api/v1/agent/mcp/raw' && req.method === 'GET') {
     if (!allowed('settings:manage')) return deny('settings:manage');
@@ -600,11 +638,15 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
     }
     if (body.cli !== undefined && !allowed('cli:manage')) return deny('cli:manage');
     if (body.ocr !== undefined && !allowed('settings:manage')) return deny('settings:manage');
-    return send(200, agentStore.setSettings(body, {allowCli: allowed('cli:manage')}));
+    if (body.llm !== undefined && !allowed('settings:manage')) return deny('settings:manage');
+    const updated = agentStore.setSettings(body, {allowCli: allowed('cli:manage')});
+    if (body.llm !== undefined && typeof syncLlm === 'function') syncLlm();
+    return send(200, {...updated, llm: agentConfigPayload().llm});
    }
    if (path === '/api/v1/agent/chat' && req.method === 'POST') {
     if (!allowed('agent:chat')) return deny('agent:chat');
-    if (!agentRuntime) return send(503, {error: 'Agent model is not configured on this demo host'});
+    const chatRuntime = await resolveAgentNow();
+    if (!chatRuntime) return send(503, {error: 'Agent model is not configured on this demo host'});
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     if (!message) return send(400, {error: 'Invalid agent message'});
     const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : 'general';
@@ -617,7 +659,7 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
     req.on('close', () => controller.abort());
     const emit = event => { if (!res.writableEnded) res.write('data: ' + JSON.stringify(event) + '\n\n'); };
     try {
-     await agentRuntime({projectId, message, onEvent: emit, abortSignal: controller.signal});
+     await chatRuntime({projectId, message, onEvent: emit, abortSignal: controller.signal});
     } catch {
      emit({type: 'error', error: 'Agent run failed'});
     } finally {
@@ -641,42 +683,88 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
  const store = openLocalStore(env.LOCAL_DATA_FILE || '.local/domel.json');
  const agentStore = openAgentStore(env.AGENT_DATA_DIR || '.local');
  const transcripts = openTranscriptStore({file: env.AGENT_TRANSCRIPT_FILE || '.local/agent/transcripts.json'});
+
+ // AI configuration: Settings overrides .env.host; a custom base URL means a
+ // locally deployed OpenAI-compatible server. The model runtime is rebuilt
+ // lazily when the effective key/model/base URL changes, so a key saved in the
+ // UI works without restarting the process.
+ const baseEnv = {
+  key: env.DEEPSEEK_API_KEY || '',
+  model: env.DEEPSEEK_MODEL || '',
+  baseUrl: env.DEEPSEEK_BASE_URL || '',
+ };
+ function resolveLlm() {
+  const ui = agentStore.llm();
+  const key = ui.apiKey || baseEnv.key;
+  const model = ui.model || baseEnv.model || 'deepseek-flash';
+  const baseUrl = ui.baseUrl || baseEnv.baseUrl || 'https://api.deepseek.com';
+  const provider = isDeepSeekBaseUrl(baseUrl) ? 'deepseek' : 'custom';
+  return {key, model, baseUrl, provider};
+ }
+ // Keep process.env in sync for the research/collector code paths that read it.
+ function syncLlmEnv() {
+  const llm = resolveLlm();
+  if (llm.provider === 'custom') {
+   process.env.AI_BASE_URL = llm.baseUrl;
+   process.env.AI_API_KEY = llm.key || 'local';
+   process.env.AI_MODEL = llm.model;
+  } else {
+   delete process.env.AI_BASE_URL;
+   delete process.env.AI_API_KEY;
+   delete process.env.AI_MODEL;
+   process.env.DEEPSEEK_MODEL = llm.model;
+   if (llm.key) process.env.DEEPSEEK_API_KEY = llm.key;
+   else delete process.env.DEEPSEEK_API_KEY;
+  }
+ }
+ syncLlmEnv();
+
  // One queue for research, source collection and event jobs. The scheduler is
  // started together with the queue so due sources are picked up without a
  // separate worker process.
- const tasks = createTaskRunner({store, env});
- let deepseek;
- if (env.DEEPSEEK_API_KEY) {
+ const tasks = createTaskRunner({store, env, getLlm: resolveLlm});
+
+ let modelCache = {signature: '', assistant: undefined, agentRuntime: undefined};
+ async function resolveModels() {
+  const llm = resolveLlm();
+  if (!llm.key && llm.provider !== 'custom') return {assistant: undefined, agentRuntime: undefined};
+  const signature = [llm.provider, llm.key, llm.model, llm.baseUrl].join('|');
+  if (modelCache.signature === signature) return modelCache;
   try {
-   deepseek = await openDeepSeekModel({
-    apiKey: env.DEEPSEEK_API_KEY,
-    modelId: env.DEEPSEEK_MODEL || 'deepseek-flash',
+   const deepseek = await openDeepSeekModel({
+    apiKey: llm.key,
+    modelId: llm.model,
     authDir: agentStore.dir,
+    baseUrl: llm.provider === 'custom' ? llm.baseUrl : undefined,
    });
+   const assistant = createAssistantRunner({...deepseek, sessionRoot: env.ASSISTANT_SESSION_DIR || '.local/assistant'});
+   const agentRuntime = createAgentRuntime({
+    store: agentStore,
+    ...deepseek,
+    workspaceRoot: env.AGENT_WORKSPACE_ROOT || '.local/workspaces',
+    agentDir: agentStore.dir,
+    transcripts,
+   });
+   modelCache = {signature, assistant, agentRuntime};
   } catch (error) {
    console.error('Agent model unavailable: ' + error.message);
+   modelCache = {signature, assistant: undefined, agentRuntime: undefined};
   }
+  return modelCache;
  }
- const assistant = deepseek
-  ? createAssistantRunner({...deepseek, sessionRoot: env.ASSISTANT_SESSION_DIR || '.local/assistant'})
-  : undefined;
- const agentRuntime = deepseek
-  ? createAgentRuntime({
-   store: agentStore,
-   ...deepseek,
-   workspaceRoot: env.AGENT_WORKSPACE_ROOT || '.local/workspaces',
-   agentDir: agentStore.dir,
-   transcripts,
-  })
-  : undefined;
  const server = localApiServer({
   store,
-  assistant,
   agentStore,
-  agentRuntime,
   transcripts,
   tasks,
   env,
+  resolveAssistant: async () => (await resolveModels()).assistant,
+  resolveAgent: async () => (await resolveModels()).agentRuntime,
+  getLlm: resolveLlm,
+  syncLlm: () => {
+   syncLlmEnv();
+   modelCache = {signature: '', assistant: undefined, agentRuntime: undefined};
+  },
   environment: env.DEMO_ENV || 'local',
   origins: (env.APP_ORIGINS || DEFAULT_ORIGINS.join(',')).split(',').map(value => value.trim()).filter(Boolean),
  });
@@ -692,7 +780,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
  server.listen(Number(env.LOCAL_API_PORT || 8788), env.LOCAL_API_BIND || '127.0.0.1', () => {
   console.log('Local demo API ready on http://' + (env.LOCAL_API_BIND || '127.0.0.1') + ':' + (env.LOCAL_API_PORT || 8788));
-  console.log('Data: ' + (env.LOCAL_DATA_FILE || '.local/domel.json') + ' · AI: ' + (deepseek ? 'configured' : 'not configured') + ' · Agent dir: ' + agentStore.dir);
+  const startupLlm = resolveLlm();
+  console.log('Data: ' + (env.LOCAL_DATA_FILE || '.local/domel.json') + ' · AI: ' + (startupLlm.key || startupLlm.provider === 'custom' ? 'configured (' + startupLlm.provider + ' · ' + startupLlm.model + ')' : 'not configured') + ' · Agent dir: ' + agentStore.dir);
   console.log('Tasks: ' + (env.TASKS_FILE || '.local/tasks.json') + ' · Events: ' + (env.EVENTS_FILE || '.local/events.json') + ' · Sources: ' + (env.SOURCES_FILE || '.local/source-registry.json'));
  });
 }

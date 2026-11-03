@@ -15,6 +15,8 @@ import {
  SessionManager,
  SettingsManager,
 } from '@earendil-works/pi-coding-agent';
+import {createProvider, envApiKeyAuth} from '@earendil-works/pi-ai';
+import {stream as streamOpenAICompletions, streamSimple as streamSimpleOpenAICompletions} from '@earendil-works/pi-ai/api/openai-completions';
 import {deepseekProvider} from '@earendil-works/pi-ai/providers/deepseek';
 import {obj, str} from '@earendil-works/pi-schema';
 
@@ -203,20 +205,77 @@ export function createAssistantRunner({model, modelRuntime, sessionRoot, cwd, sy
  };
 }
 
-export async function openDeepSeekModel({apiKey, modelId = 'deepseek-flash', authDir = '.pi-sessions/.agent'}) {
+export function isDeepSeekBaseUrl(baseUrl) {
+ const raw = String(baseUrl ?? '').trim();
+ if (!raw) return true;
+ try {
+  const url = new URL(raw);
+  return url.hostname === 'api.deepseek.com' || url.hostname.endsWith('.deepseek.com');
+ } catch {
+  return false;
+ }
+}
+
+// Register an OpenAI-compatible provider for a self-hosted/private model
+// server (Ollama, vLLM, LM Studio, an internal gateway). The model id and base
+// URL come from Settings; no catalog is required.
+function customProviderRuntime({modelId, baseUrl}) {
+ const normalizedBase = String(baseUrl).replace(/\/$/, '');
+ process.env.CUSTOM_AI_API_KEY = process.env.CUSTOM_AI_API_KEY || 'local';
+ const contextWindow = Math.max(4096, Number(process.env.CUSTOM_AI_CONTEXT_WINDOW) || 128000);
+ const maxTokens = Math.max(512, Number(process.env.CUSTOM_AI_MAX_TOKENS) || 8192);
+ const model = {
+  id: modelId,
+  name: modelId,
+  api: 'openai-completions',
+  provider: 'custom',
+  baseUrl: normalizedBase,
+  input: ['text'],
+  cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0},
+  reasoning: false,
+  contextWindow,
+  maxTokens,
+  type: 'chat',
+ };
+ const provider = createProvider({
+  id: 'custom',
+  name: 'Custom OpenAI-compatible model',
+  baseUrl: normalizedBase,
+  auth: envApiKeyAuth('Custom AI API key', ['CUSTOM_AI_API_KEY']),
+  models: [model],
+  api: {stream: streamOpenAICompletions, streamSimple: streamSimpleOpenAICompletions},
+ });
+ return {provider, model};
+}
+
+export async function openDeepSeekModel({apiKey, modelId = 'deepseek-flash', authDir = '.pi-sessions/.agent', baseUrl = ''}) {
  mkdirSync(authDir, {recursive: true});
- // The provider reads DEEPSEEK_API_KEY from the environment; do not persist the
- // key into the runtime's credential file.
- if (apiKey && !process.env.DEEPSEEK_API_KEY) process.env.DEEPSEEK_API_KEY = apiKey;
+ const custom = !isDeepSeekBaseUrl(baseUrl);
+ let runtimeConfig;
+ if (custom) {
+  if (!String(baseUrl ?? '').trim()) throw Error('Custom AI base URL is required');
+  runtimeConfig = customProviderRuntime({modelId, baseUrl});
+  process.env.CUSTOM_AI_API_KEY = apiKey || process.env.CUSTOM_AI_API_KEY || 'local';
+ } else {
+  // The provider reads DEEPSEEK_API_KEY from the environment; do not persist the
+  // key into the runtime's credential file.
+  if (apiKey && !process.env.DEEPSEEK_API_KEY) process.env.DEEPSEEK_API_KEY = apiKey;
+ }
  const modelRuntime = await ModelRuntime.create({
   authPath: join(authDir, 'auth.json'),
   modelsPath: null,
   refreshOnCreate: false,
  });
+ if (custom) {
+  modelRuntime.registerNativeProvider(runtimeConfig.provider);
+  const model = modelRuntime.getModel('custom', modelId);
+  if (!model) throw Error('Custom AI model is not available: ' + modelId);
+  return {model, modelRuntime, custom: true};
+ }
  modelRuntime.registerNativeProvider(deepseekProvider());
  const model = modelRuntime.getModel('deepseek', modelId);
  if (!model) throw Error('DeepSeek model is not available: ' + modelId);
- return {model, modelRuntime};
+ return {model, modelRuntime, custom: false};
 }
 
 export async function openAssistant({apiKey, modelId = 'deepseek-flash', sessionRoot = '.pi-sessions', cwd = process.cwd()}) {
