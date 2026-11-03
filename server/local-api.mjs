@@ -99,7 +99,7 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
   }
   if (path === '/health' && req.method === 'GET') return send(200, {status: 'ok', architecture: 'local-single-user'});
   let body = {};
-  if (['POST', 'PATCH'].includes(req.method)) {
+  if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
    let size = 0;
    const chunks = [];
    for await (const chunk of req) {

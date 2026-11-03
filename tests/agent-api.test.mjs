@@ -147,3 +147,35 @@ test('admin can switch between web roles but cannot grant system', async () => {
   rmSync(root, {recursive: true, force: true});
  }
 });
+
+test('replacing the raw MCP config needs a parsed PUT body and the admin role', async () => {
+ const root = mkdtempSync(join(tmpdir(), 'domel-agent-api-'));
+ const store = openLocalStore(join(root, 'data.json'));
+ const agentStore = openAgentStore(join(root, 'agent-root'));
+ const {server, url} = await listen({store, agentStore, env: {}});
+ const json = (path, method = 'GET', body) => fetch(url + path, {
+  method,
+  headers: {'Content-Type': 'application/json'},
+  ...(body ? {body: JSON.stringify(body)} : {}),
+ });
+ try {
+  const replaced = await json('/api/v1/agent/mcp', 'PUT', {mcpServers: {mock: {command: '/usr/bin/node', args: ['server.js']}}});
+  assert.equal(replaced.status, 200);
+  const payload = await replaced.json();
+  assert.ok(payload.mcpServers.mock);
+  assert.equal(payload.mcpServers.mock.command, '/usr/bin/node');
+
+  const invalidJson = await fetch(url + '/api/v1/agent/mcp', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: '{oops'});
+  assert.equal(invalidJson.status, 400);
+
+  const invalidShape = await json('/api/v1/agent/mcp', 'PUT', {});
+  assert.equal(invalidShape.status, 409);
+  assert.match((await invalidShape.json()).error, /Operation failed/);
+
+  agentStore.setSettings({role: 'viewer'});
+  assert.equal((await json('/api/v1/agent/mcp', 'PUT', {mcpServers: {}})).status, 403);
+ } finally {
+  await new Promise(resolve => server.close(resolve));
+  rmSync(root, {recursive: true, force: true});
+ }
+});
