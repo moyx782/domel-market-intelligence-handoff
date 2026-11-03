@@ -1,0 +1,116 @@
+{
+  "id": "domel",
+  "name": "Domel",
+  "legalName": "Domel, d.o.o.",
+  "aliases": [
+    "Domel Electric Motors",
+    "Domel Electric Motors Suzhou Co., Ltd.",
+    "多麦机电（苏州）有限公司"
+  ],
+  "website": "https://www.domel.com",
+  "productSite": "https://components.domel.com",
+  "country": "Slovenia",
+  "chinaEntity": {
+    "name": "多麦机电（苏州）有限公司",
+    "city": "Suzhou",
+    "country": "China"
+  },
+  "industries": [
+    "Electric motors and drives",
+    "HVAC and ventilation",
+    "Professional and home appliances",
+    "Power tools",
+    "Industrial equipment",
+    "Medical and laboratory equipment",
+    "Mobility and fuel cells"
+  ],
+  "products": [
+    "EC/BLDC low voltage motors",
+    "EC/PMSM high voltage motors",
+    "Permanent magnet DC motors",
+    "Universal commutator motors",
+    "Motor drives",
+    "Blowers and vacuum motors",
+    "Thru-flow motors for dry applications",
+    "Bypass motors for dry and wet applications",
+    "Brushless vacuum motors",
+    "Brushless blowers and pumps",
+    "Laboratory equipment",
+    "OEM production",
+    "Components and tools"
+  ],
+  "solutions": [
+    "Professional and home appliances",
+    "Floor care",
+    "Kitchen and laundry appliances",
+    "Power tools",
+    "Heating, ventilation and air conditioning",
+    "Industrial ventilation and fume extraction",
+    "Printing and packing",
+    "Compressors and fluid pumps",
+    "Medical and laboratory applications",
+    "Mobility, electric drives and fuel cells"
+  ],
+  "markets": [
+    "Europe",
+    "China",
+    "North America",
+    "Worldwide"
+  ],
+  "languages": [
+    "en",
+    "zh",
+    "de",
+    "sl"
+  ],
+  "keywords": {
+    "en": [
+      "EC motor",
+      "BLDC motor",
+      "PMSM motor",
+      "motor drive",
+      "HVAC",
+      "ventilation",
+      "blower",
+      "vacuum motor",
+      "home appliance",
+      "floor care",
+      "power tools",
+      "e-mobility",
+      "fuel cell"
+    ],
+    "zh": [
+      "EC 电机",
+      "无刷直流电机",
+      "永磁同步电机",
+      "电机驱动",
+      "暖通",
+      "通风",
+      "风机",
+      "吸尘器电机",
+      "家电",
+      "电动工具",
+      "电动出行",
+      "燃料电池"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://www.domel.com",
+      "label": "Domel corporate site: products, solutions, applications",
+      "verifiedAt": "2026-11-03"
+    },
+    {
+      "url": "https://components.domel.com",
+      "label": "Domel components and product catalogue",
+      "verifiedAt": "2026-11-03"
+    },
+    {
+      "url": "https://www.domel.com/sitemap.xml",
+      "label": "Sitemap index (en/de)",
+      "verifiedAt": "2026-11-03"
+    }
+  ],
+  "lastVerifiedAt": "2026-11-03",
+  "notes": "Built from Domel's public website for the demo. No confidential or internal data. The search keywords are demo defaults and can be refined by an admin."
+}

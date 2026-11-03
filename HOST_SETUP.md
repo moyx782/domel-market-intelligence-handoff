@@ -2,11 +2,14 @@
 
 Architecture: application execution on team host; database and authentication on cloud Supabase. See docs/ADR-001-host-cloud.md.
 
+## Single-user demo first
+The current demo stage does not need this host configuration. Put `DEEPSEEK_API_KEY=...` in `.env.host` and run `npm run demo:api` plus `npm run dev`; data stays in `.local/domel.json` and there is no login. Continue below only when moving to multi-user host mode.
+
 ## Existing project deployment
 1. Preserve the current project and data. Apply only new migrations not already applied, in order: 202610250001_review_evidence_guard.sql, then 202610260001_host_queue.sql. Never repeat the initial schema migration on an existing project. Back up before shared schema changes.
 2. Copy .env.host.example to .env.host locally. Configure Supabase URL, publishable key, service-role key and DeepSeek key on the host. Do not put service-role/DeepSeek keys in VITE variables or commit .env.host. This execution environment did not have host service credentials and did not apply cloud migrations.
 3. API and worker must use the same QUEUE_ENV. Use distinct development and demo environment names. Different members should not run workers in the same shared environment without explicit coordination.
-4. Run npm.cmd run host:api in one terminal and npm.cmd run host:worker in another. Node 24 is the verified runtime. The API also loads the existing frontend .env for public Supabase settings. Worker credentials are loaded only from .env.host.
+4. Run npm.cmd run host:api in one terminal and npm.cmd run host:worker in another. Node 24 is the verified runtime. The API also loads the existing frontend .env for public Supabase settings. Worker credentials are loaded only from .env.host. The optional read-only assistant reuses DEEPSEEK_API_KEY; set ASSISTANT_ENABLED=0 to leave it off. Its JSONL sessions live in .pi-sessions/ and are not covered by Supabase backups.
 5. Frontend: VITE_EXECUTION_MODE=host (default), VITE_BACKEND_URL=http://127.0.0.1:8787. Run npm.cmd run dev. Local API binds to loopback by default. For classmates on other computers, configure a reachable HTTPS host/reverse proxy and exact APP_ORIGINS, then set their frontend backend URL. Their localhost does not point to the team host. Never expose the service key or an unauthenticated worker port.
 6. Legacy Edge Functions remain for explicit rollback using VITE_EXECUTION_MODE=legacy-edge; host mode never silently falls back to Edge Functions. New host worker does not require Edge Function deployment. Stop workers and let active jobs settle before rolling back.
 

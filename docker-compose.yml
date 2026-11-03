@@ -1,0 +1,17 @@
+# Trusted-network deployment. Put DEEPSEEK_API_KEY and other server settings in
+# .env.host next to this file; it is mounted at runtime, not copied into the image.
+services:
+  domel:
+    build: .
+    image: domel-market-intelligence:local
+    env_file:
+      - .env.host
+    environment:
+      LOCAL_API_BIND: 0.0.0.0
+      LOCAL_API_PORT: "8788"
+      SERVE_STATIC: "1"
+    ports:
+      - "8788:8788"
+    volumes:
+      - ./.local:/app/.local
+    restart: unless-stopped

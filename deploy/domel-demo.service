@@ -1,0 +1,22 @@
+[Unit]
+Description=Domel market intelligence demo (trusted network)
+After=network.target
+
+[Service]
+Type=simple
+User=domel
+WorkingDirectory=/opt/domel
+Environment=LOCAL_API_BIND=0.0.0.0
+Environment=LOCAL_API_PORT=8788
+Environment=SERVE_STATIC=1
+EnvironmentFile=-/opt/domel/.env.host
+# Adjust the node path for this host (nvm installs are not in /usr/bin).
+# Adjust the node path for this host (nvm installs are not in /usr/bin).
+ExecStart=/usr/bin/node server/local-api.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

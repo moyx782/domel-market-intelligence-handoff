@@ -11,9 +11,17 @@
     "verify:evidence": "node scripts/collect-evidence.mjs",
     "host:api": "node --env-file-if-exists=.env --env-file-if-exists=.env.host server/api.mjs",
     "host:worker": "node --env-file-if-exists=.env.host server/worker.mjs",
-    "host:doctor": "node --env-file-if-exists=.env.host scripts/host-doctor.mjs"
+    "host:doctor": "node --env-file-if-exists=.env.host scripts/host-doctor.mjs",
+    "spike:pi": "node scripts/pi-sdk-spike.mjs",
+    "demo:api": "node --env-file-if-exists=.env --env-file-if-exists=.env.host server/local-api.mjs",
+    "demo:lan": "node scripts/demo-lan.mjs",
+    "test:ui": "node scripts/ui-acceptance.mjs",
+    "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.host server/local-api.mjs",
+    "serve": "npm run build && npm run start",
+    "agent:admin": "node scripts/agent-admin.mjs"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "@supabase/supabase-js": "2.117.3",
     "lucide-react": "0.468.0",
     "react": "19.3.0",
@@ -23,6 +31,7 @@
     "@electric-sql/pglite": "0.5.9",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "playwright-core": "1.49.1",
     "typescript": "5.9.3",
     "vite": "6.4.4"
   }

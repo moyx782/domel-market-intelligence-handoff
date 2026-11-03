@@ -4,7 +4,8 @@ import {pathToFileURL} from 'node:url';
 import {createClient} from '@supabase/supabase-js';
 import {extractionConfig} from '../supabase/functions/_shared/ai-extraction.mjs';
 import {validateScope} from '../supabase/functions/_shared/research-validation.mjs';
-export function apiServer({clientForToken,environment='development',origins=['http://127.0.0.1:5174','http://127.0.0.1:5175'],capabilities={}}){
+import {openAssistant,supabaseReader} from './assistant.mjs';
+export function apiServer({clientForToken,environment='development',origins=['http://127.0.0.1:5174','http://127.0.0.1:5175'],capabilities={},assistant}){
  return createServer(async(req,res)=>{
   const origin=req.headers.origin;
   const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store',...(origin&&origins.includes(origin)?{'Access-Control-Allow-Origin':origin,Vary:'Origin'}:{})});res.end(JSON.stringify(data));};
@@ -23,7 +24,7 @@ export function apiServer({clientForToken,environment='development',origins=['ht
     let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>64000)return send(413,{error:'Request too large'});chunks.push(chunk);}
     try{body=JSON.parse(Buffer.concat(chunks).toString()||'{}');}catch{return send(400,{error:'Invalid JSON'});}
    }
-   if(path==='/api/v1/capabilities'&&req.method==='GET')return send(200,{version:'host-v1',execution:'host-queue',environment,...capabilities});
+   if(path==='/api/v1/capabilities'&&req.method==='GET')return send(200,{version:'host-v1',execution:'host-queue',environment,...capabilities,assistant:!!assistant});
    if(path==='/api/v1/workspace'&&req.method==='GET'){
     const names=['projects','sources','findings','review_events','reports'];const rows=await Promise.all(names.map(t=>result(db.from(t).select('*'))));
     return send(200,{projects:rows[0],sources:rows[1],findings:rows[2],audits:rows[3],reports:rows[4]});
@@ -43,6 +44,23 @@ export function apiServer({clientForToken,environment='development',origins=['ht
    const review=path.match(/^\/api\/v1\/insights\/([0-9a-f-]{36})\/review$/i);
    if(review&&req.method==='PATCH')return send(200,await result(db.rpc('review_finding',{p_id:review[1],p_text:body.text,p_decision:body.decision,p_revision:body.revision})));
    if(path==='/api/v1/reports'&&req.method==='POST')return send(201,await result(db.rpc('generate_report',{p_project:body.project_id})));
+   const chat=path.match(/^\/api\/v1\/research-tasks\/([0-9a-f-]{36})\/assistant$/i);
+   if(chat&&req.method==='POST'){
+    if(!assistant)return send(503,{error:'Research assistant is not configured on the team host'});
+    const message=typeof body.message==='string'?body.message.trim():'';
+    if(!message||message.length>8000)return send(400,{error:'Invalid assistant message'});
+    res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-store, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no',...(origin&&origins.includes(origin)?{'Access-Control-Allow-Origin':origin,Vary:'Origin'}:{})});
+    res.setTimeout(0);
+    res.flushHeaders();
+    const beat=setInterval(()=>{if(!res.writableEnded)res.write(': keep-alive\n\n');},15000);
+    const controller=new AbortController();
+    req.on('close',()=>controller.abort());
+    const emit=event=>{if(!res.writableEnded)res.write('data: '+JSON.stringify(event)+'\n\n');};
+    try{await assistant({reader:supabaseReader(db),userId:user.id,projectId:chat[1],message,onEvent:emit,abortSignal:controller.signal});}
+    catch{emit({type:'error',error:'Assistant run failed'});}
+    finally{clearInterval(beat);res.end();}
+    return;
+   }
    return send(404,{error:'Route not found'});
   }catch(e){const permitted=/Project not accessible|already queued|Saved extraction is unavailable|new research run|finding changed|Finding not accessible|Accept at least one|Supporting source|Invalid decision|Invalid finding wording/;return send(409,{error:permitted.test(e?.message||'')?e.message:'Operation failed. Check host configuration and database migrations.'});}
  });
@@ -51,7 +69,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const url=process.env.SUPABASE_URL||process.env.VITE_SUPABASE_URL,key=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
  if(!url||!key)throw Error('Configure Supabase public URL and publishable key for the API.');
  const policy=sourcePolicy(k=>process.env[k]);
- const server=apiServer({environment:process.env.QUEUE_ENV||'development',origins:(process.env.APP_ORIGINS||'http://127.0.0.1:5174,http://127.0.0.1:5175').split(','),clientForToken:token=>createClient(url,key,{global:{headers:{Authorization:'Bearer '+token}},auth:{persistSession:false,autoRefreshToken:false}}),capabilities:{ai:!!extractionConfig(k=>process.env[k]),search:!!process.env.DEEPSEEK_API_KEY,allowed_domains:policy.restrictedDomains,default_source_urls:policy.defaultSourceUrls,discovery_mode:'additive',max_sources:5}});
+ const assistant=(process.env.DEEPSEEK_API_KEY&&process.env.ASSISTANT_ENABLED!=='0')?await openAssistant({apiKey:process.env.DEEPSEEK_API_KEY,modelId:process.env.DEEPSEEK_MODEL||'deepseek-flash',sessionRoot:process.env.ASSISTANT_SESSION_DIR||'.pi-sessions'}).catch(error=>{console.error('Research assistant unavailable: '+error.message);return undefined;}):undefined;
+ const server=apiServer({environment:process.env.QUEUE_ENV||'development',origins:(process.env.APP_ORIGINS||'http://127.0.0.1:5174,http://127.0.0.1:5175').split(','),assistant,clientForToken:token=>createClient(url,key,{global:{headers:{Authorization:'Bearer '+token}},auth:{persistSession:false,autoRefreshToken:false}}),capabilities:{ai:!!extractionConfig(k=>process.env[k]),search:!!process.env.DEEPSEEK_API_KEY,allowed_domains:policy.restrictedDomains,default_source_urls:policy.defaultSourceUrls,discovery_mode:'additive',max_sources:5}});
  server.requestTimeout=15000;server.headersTimeout=10000;server.listen(Number(process.env.API_PORT||8787),process.env.API_BIND||'127.0.0.1',()=>console.log('Host API ready'));
 }
 

@@ -3,17 +3,28 @@ import type {Bundle,Project,Decision,Report} from './types';
 import {demoBundle,uid} from './demo';
 import {reviewedFinding,reportSnapshot} from './rules.mjs';
 import {passwordIntent} from './auth-flow.mjs';
-export const initialPasswordSetup=passwordIntent(window.location.href);
-if(initialPasswordSetup)sessionStorage.removeItem('domel.demo');
 const url=import.meta.env.VITE_SUPABASE_URL,key=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-export const supabase=url&&key?createClient(url,key):null;
+// Single-user demo: no Supabase configuration (or VITE_APP_MODE=local) means
+// local JSON storage through the demo API and no authentication.
+export const usesLocalBackend=import.meta.env.VITE_APP_MODE==='local'||!url||!key;
+export const supabase=usesLocalBackend?null:createClient(url!,key!);
+export const initialPasswordSetup=usesLocalBackend?false:passwordIntent(window.location.href);
+if(initialPasswordSetup)sessionStorage.removeItem('domel.demo');
 const hostMode=import.meta.env.VITE_EXECUTION_MODE!=='legacy-edge';
-const hostUrl=(import.meta.env.VITE_BACKEND_URL||'http://127.0.0.1:8787').replace(/\/$/,'');
+// In local mode the API runs on the same machine as the page, so a phone on the
+// LAN reaches it through the same hostname it used to load the frontend.
+const localHost=typeof window!=='undefined'&&window.location.hostname?window.location.hostname:'127.0.0.1';
+export const backendBase=(import.meta.env.VITE_BACKEND_URL||(usesLocalBackend?'http://'+localHost+':8788':'http://127.0.0.1:8787')).replace(/\/$/,'');
+const hostUrl=backendBase;
 async function hostRequest(path:string,method='GET',body?:unknown){
- const {data}=await supabase!.auth.getSession();
- if(!data.session)throw Error('Please sign in again.');
  let response:Response;
- try{response=await fetch(hostUrl+path,{method,signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+data.session.access_token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw Error('Cannot connect to the team Backend API. Check that the host is running and VITE_BACKEND_URL is correct.');}
+ if(usesLocalBackend){
+  try{response=await fetch(hostUrl+path,{method,signal:AbortSignal.timeout(30000),headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw Error('Cannot connect to the local demo API. Start it with npm run demo:api.');}
+ }else{
+  const {data}=await supabase!.auth.getSession();
+  if(!data.session)throw Error('Please sign in again.');
+  try{response=await fetch(hostUrl+path,{method,signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+data.session.access_token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw Error('Cannot connect to the team Backend API. Check that the host is running and VITE_BACKEND_URL is correct.');}
+ }
  const payload=await response.json();if(!response.ok)throw Error(payload.error||'Backend request failed');return payload;
 }
 const storage='domel.mvi.demo.v1';
@@ -21,6 +32,7 @@ export const readDemo=():Bundle=>{try{const saved=localStorage.getItem(storage);
 const saveDemo=(b:Bundle)=>{try{localStorage.setItem(storage,JSON.stringify(b));}catch{throw Error('Browser storage is unavailable or full. Changes were not saved. Enable local storage or use the live workspace.');}};
 export async function load(demo:boolean):Promise<Bundle>{
  if(demo)return readDemo();
+ if(usesLocalBackend)return hostRequest('/api/v1/workspace');
  if(!supabase)throw Error('Supabase is not configured.');
  if(hostMode)return hostRequest('/api/v1/workspace');
  const tables=['projects','sources','findings','review_events','reports'];
@@ -29,9 +41,13 @@ export async function load(demo:boolean):Promise<Bundle>{
  return {projects:rs[0].data!,sources:rs[1].data!,findings:rs[2].data!,audits:rs[3].data!,reports:rs[4].data!} as Bundle;
 }
 export async function createProject(p:Omit<Project,'id'|'created_at'|'updated_at'|'status'|'stage'|'errors'>,demo:boolean){
- const now=new Date().toISOString();const row={...p,id:uid(),created_at:now,updated_at:now,status:'draft',stage:'Not started',errors:[]};
- if(demo){const b=readDemo();b.projects.unshift(row);saveDemo(b);return row;}
+ if(demo){
+  const now=new Date().toISOString();const row={...p,id:uid(),created_at:now,updated_at:now,status:'draft',stage:'Not started',errors:[]};
+  const b=readDemo();b.projects.unshift(row);saveDemo(b);return row;
+ }
+ // Host and local modes create the project on the server; no client id is needed.
  if(hostMode)return hostRequest('/api/v1/research-tasks','POST',p);
+ const now=new Date().toISOString();const row={...p,id:uid(),created_at:now,updated_at:now,status:'draft',stage:'Not started',errors:[]};
  const {data,error}=await supabase!.from('projects').insert(row).select().single();if(error)throw error;return data as Project;
 }
 export async function runResearch(id:string,demo:boolean,mode:'collect'|'research'|'extract'='collect'){
@@ -51,6 +67,7 @@ export async function generateReport(id:string,demo:boolean):Promise<Report>{
 }
 
 export async function backendCapabilities(){
+ if(usesLocalBackend)return hostRequest('/api/v1/capabilities');
  if(!supabase)throw Error('Supabase is not configured.');
  if(hostMode)return hostRequest('/api/v1/capabilities');
  const {data,error}=await supabase.functions.invoke('research',{body:{mode:'capabilities'}});
