@@ -1,7 +1,9 @@
 # UI acceptance — M1–M5 task loop, event library, agent and settings
 
 Date: 2026-11-03 (Asia/Shanghai)
-Code: commit `ff8ec2b` (four acceptance-found bugs fixed during the cycle; see below)
+Code: final M1–M5 iteration (geo hierarchy + official-website enrichment; see `git log`).
+The original acceptance cycle ran at `ff8ec2b`; the final iteration re-ran the full browser
+(187/187), API (175/175) and production checks after the geo/website changes.
 Browser: Google Chrome 156.0.8078.79 via playwright-core 1.49.1, headless
 Viewports: 1440×1000 desktop and 390×844 mobile
 Frontend under test: `http://127.0.0.1:5176` (Vite dev server, `VITE_BACKEND_URL=http://127.0.0.1:8791`)
@@ -21,6 +23,10 @@ BASE=http://127.0.0.1:5176 API_BASE=http://127.0.0.1:8791 \
 ```
 
 Full PASS/FAIL transcript: `evidence/task-loop/UI_ACCEPTANCE_2026-11-03.log`.
+
+Final-iteration additions verified: country/province/city/district rows in the event detail,
+clickable official website plus visible source/document URLs, official-website discovery for
+events that had none (27/31 demo events), and the 27-column CSV export including province/district.
 
 | Area | Checks | Result |
 |---|---|---|
@@ -201,3 +207,26 @@ If a run is interrupted while the role is not admin, restore it with
   not depend on external site content.
 - `scripts/ui-acceptance.mjs` and `scripts/acceptance-api.mjs` are not part of `npm test`; they need
   a running demo and Chrome.
+
+## Final iteration re-run (geo + official website enrichment)
+
+After the acceptance cycle above, user review found that several events showed an empty
+country and no official website, and that source URLs were only link targets, not visible text.
+Changes (see git log): stored geography table `seed/geo-cn.json` + `server/geo.mjs` for
+country/province/city/district, official-website discovery during enrichment (web search →
+fetch → match → prefer the site root, never a contact page), source/document URL text in the
+detail panel, and `scripts/backfill-event-geo.mjs` for old records.
+
+Re-run results on the same frozen scripts (data isolated in `/tmp/lead-final2`):
+
+| Check | Result |
+|---|---|
+| Browser acceptance `scripts/ui-acceptance.mjs` | **187 PASS / 0 FAIL**, 0 console/page errors |
+| API acceptance `scripts/acceptance-api.mjs` | **175 PASS / 0 FAIL** (one extra check: CSV now has province/district) |
+| Production HTTP (`SERVE_STATIC=1`, same-origin Origin) | `/`, `/assets/*.js|css`, SPA fallback, `/api/v1/workspace` 200; evil Origin 403 |
+| Production browser E2E | Event calendar renders, SPA fallback renders, 0 console/page errors |
+| `npm test` | **230/230** |
+
+The final-iteration logs overwrite the same evidence files
+(`evidence/task-loop/UI_ACCEPTANCE_2026-11-03.log`, `API_ACCEPTANCE_2026-11-03.log`,
+`PRODUCTION_HTTP_2026-11-03.log`, `PRODUCTION_BROWSER_2026-11-03.log`).

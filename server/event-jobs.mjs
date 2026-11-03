@@ -9,6 +9,7 @@
 // network.
 
 import {toDateOnly} from './event-store.mjs';
+import {pageMatchesEvent, rankEventWebsiteResults} from './event-search.mjs';
 
 const EVENT_STATUS_RANK = {discovered: 0, enriched: 1, verified: 2, archived: 3};
 const CONFIDENCE_RANK = {low: 0, medium: 1, high: 2};
@@ -224,7 +225,7 @@ function jsonLdEvents(html) {
  return events;
 }
 
-function jsonLdEventValues(raw) {
+function jsonLdEventValues(raw, geo = null) {
  const values = {};
  const name = text(raw.name);
  if (name) values.name = name;
@@ -238,7 +239,12 @@ function jsonLdEventValues(raw) {
   const address = Array.isArray(location.address) ? location.address[0] : location.address;
   if (address && typeof address === 'object') {
    if (text(address.addressLocality)) values.city = text(address.addressLocality);
-   if (text(address.addressCountry)) values.country = countryName(text(address.addressCountry));
+   if (text(address.addressCountry)) {
+    const countryCode = text(address.addressCountry);
+    const stored = geo ? geo.country(countryCode) : null;
+    const resolved = stored ? stored.country : countryName(countryCode);
+    if (resolved) values.country = resolved;
+   }
   } else if (typeof address === 'string' && address.trim()) {
    const city = CITY_NAMES.find(item => address.includes(item));
    if (city) values.city = city;
@@ -409,7 +415,7 @@ async function probeAvailability(probe, url, fallback, {signal} = {}) {
  }
 }
 
-function analyzePage(page) {
+function analyzePage(page, geo = null) {
  const html = typeof page.html === 'string' ? page.html : '';
  const pageUrl = httpUrl(page.finalUrl) ?? httpUrl(page.url) ?? null;
  const title = text(page.title);
@@ -418,7 +424,7 @@ function analyzePage(page) {
  const values = {};
  let structured = false;
  for (const raw of jsonLdEvents(html)) {
-  const parsed = jsonLdEventValues(raw);
+  const parsed = jsonLdEventValues(raw, geo);
   if (Object.keys(parsed).length) structured = true;
   for (const [field, value] of Object.entries(parsed)) {
    if (needsValue(values[field])) values[field] = value;
@@ -435,16 +441,45 @@ function analyzePage(page) {
   if (needsValue(values.startDate) && range.startDate) values.startDate = range.startDate;
   if (needsValue(values.endDate) && range.endDate) values.endDate = range.endDate;
  }
+ // City / venue / hierarchy come from the stored geography table when one is
+ // configured; the built-in lists remain only as a no-geo fallback for tests.
  if (needsValue(values.city)) {
-  const city = inferCity(bodyText);
-  if (city) {
-   values.city = city;
-   if (needsValue(values.country)) values.country = 'China';
+  const stored = geo ? geo.city(bodyText) : null;
+  if (stored) {
+   values.city = stored.name ?? stored.city;
+   if (needsValue(values.country) && stored.country) values.country = stored.country;
+   if (needsValue(values.province) && stored.province) values.province = stored.province;
+  } else {
+   const city = inferCity(bodyText);
+   if (city) values.city = city;
   }
  }
  if (needsValue(values.venue)) {
-  const venue = inferVenue(bodyText);
-  if (venue) values.venue = venue;
+  const storedVenue = geo ? geo.venue(bodyText) : null;
+  if (storedVenue) {
+   values.venue = storedVenue.venue;
+   if (needsValue(values.country) && storedVenue.country) values.country = storedVenue.country;
+   if (needsValue(values.province) && storedVenue.province) values.province = storedVenue.province;
+   if (needsValue(values.city) && storedVenue.city) values.city = storedVenue.city;
+   if (needsValue(values.district) && storedVenue.district) values.district = storedVenue.district;
+  } else {
+   const venue = inferVenue(bodyText);
+   if (venue) values.venue = venue;
+  }
+ }
+ if (geo) {
+  const inferred = geo.infer({
+   country: values.country,
+   province: values.province,
+   city: values.city,
+   district: values.district,
+   venue: values.venue,
+   name: values.name,
+   address: bodyText,
+  });
+  for (const field of ['country', 'province', 'city', 'district']) {
+   if (needsValue(values[field]) && inferred[field]) values[field] = inferred[field];
+  }
  }
  if (needsValue(values.organizer)) {
   const organizer = inferOrganizer(bodyText);
@@ -472,6 +507,8 @@ export function createEventJobs({
  registry = null,
  collector = null,
  search = null,
+ webSearch = null,
+ geo = null,
  region = 'cn',
  now = () => Date.now(),
  onTaskProgress = null,
@@ -552,6 +589,10 @@ export function createEventJobs({
   if (country) input.country = country;
   const venue = text(candidate.venue);
   if (venue) input.venue = venue;
+  const province = text(candidate.province);
+  if (province) input.province = province;
+  const district = text(candidate.district);
+  if (district) input.district = district;
   const startDate = toDateOnly(candidate.startDate);
   if (startDate) input.startDate = startDate;
   const endDate = toDateOnly(candidate.endDate);
@@ -652,7 +693,41 @@ export function createEventJobs({
   };
  }
 
- function candidateUrls(event) {
+ // The official website should point at the site root or a landing page rather
+// than a deep contact/about path (search results often surface the latter).
+function websitePreference(url) {
+ try {
+  const parsed = new URL(url);
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  let score = parsed.protocol === 'https:' ? 1 : 0;
+  if (segments.length === 0) score += 10;
+  else if (segments.length === 1) score += 5;
+  return score - segments.length;
+ } catch {
+  return -100;
+ }
+}
+
+const SECOND_LEVEL_SUFFIXES = ['com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'com.hk', 'com.mo', 'com.tw', 'co.uk', 'co.jp'];
+
+function siteKey(hostname) {
+ const labels = hostname.replace(/^www\./i, '').split('.');
+ const lastTwo = labels.slice(-2).join('.');
+ const lastThree = labels.slice(-3).join('.');
+ return labels.length >= 3 && SECOND_LEVEL_SUFFIXES.includes(lastTwo) ? lastThree : lastTwo;
+}
+
+// Same site (including subdomains such as en.example.com vs www.example.com) so
+// a deep contact page can be upgraded to the official home page.
+function sameHost(left, right) {
+ try {
+  return siteKey(new URL(left).hostname) === siteKey(new URL(right).hostname);
+ } catch {
+  return false;
+ }
+}
+
+function candidateUrls(event) {
   const urls = [];
   const website = httpUrl(event.website);
   if (website) urls.push(website);
@@ -678,7 +753,29 @@ export function createEventJobs({
    error.permanent = true;
    throw error;
   }
-  const urls = candidateUrls(event);
+  let urls = candidateUrls(event);
+  let discoveredWebsite = '';
+  let discoveredCandidates = [];
+  // Discovered events often have no website yet (the search result may only
+  // carry a name). Enrichment then asks the web-search adapter for candidate
+  // official pages before giving up; a candidate only becomes the event's
+  // website after its page was fetched and matched.
+  if (!urls.length && typeof webSearch === 'function') {
+   await progress(`搜索官网：${event.name || eventId}`);
+   try {
+    const results = await webSearch({query: `${event.name} 官网 官方网站 official website`, count: 8});
+    const ranked = rankEventWebsiteResults(event, results, {limit: 3});
+    if (ranked.length) {
+     discoveredCandidates = ranked;
+     urls = ranked.map(item => item.url);
+     discoveredWebsite = ranked[0].url;
+     await note(`官网搜索：${ranked.length} 个候选，优先核验 ${discoveredWebsite}`, 'info');
+    }
+   } catch (error) {
+    if (isAborted(signal)) throw abortError();
+    await note(`官网搜索失败：${error instanceof Error ? error.message : String(error)}`, 'warn');
+   }
+  }
   if (!urls.length) {
    const missingNote = '缺少可核验的官网或来源链接';
    const appended = needsValue(event.notes) || !event.notes.includes(missingNote) ? [missingNote] : [];
@@ -705,6 +802,7 @@ export function createEventJobs({
   let exhibitorListStatus = 'unknown';
   let structured = false;
   let collected = 0;
+  const matchedPages = [];
 
   for (let index = 0; index < urls.length; index += 1) {
    throwIfAborted(signal);
@@ -729,9 +827,10 @@ export function createEventJobs({
     continue;
    }
    collected += 1;
-   const page = analyzePage({...result, url});
+   const page = analyzePage({...result, url}, geo);
    if (page.structured) structured = true;
    const pageUrl = page.pageUrl ?? url;
+   if (pageMatchesEvent(event, page)) matchedPages.push(pageUrl);
    collectedSources.push({
     url: pageUrl,
     title: page.title || text(event.name),
@@ -802,6 +901,43 @@ export function createEventJobs({
    changes.exhibitorListStatus = exhibitorListStatus;
    fields.push('exhibitorListUrl');
   }
+  // Search-result candidates only become the official website after a fetched
+  // page matched the event name. When the official site cannot be fetched at
+  // all, a strong search result is still shown as the website but flagged as
+  // unverified, so the operator can open it and correct it by hand.
+  let websiteFromSearch = '';
+  const existingWebsite = httpUrl(event.website) ?? '';
+  const matchedBest = matchedPages.slice().sort((left, right) => websitePreference(right) - websitePreference(left))[0] ?? '';
+  let chosenWebsite = matchedBest;
+  if (!chosenWebsite && discoveredCandidates.length && discoveredCandidates[0].score >= 3) {
+   chosenWebsite = discoveredCandidates[0].url;
+   websiteFromSearch = chosenWebsite;
+  }
+  if (chosenWebsite && (!existingWebsite
+   || (sameHost(existingWebsite, chosenWebsite) && websitePreference(chosenWebsite) > websitePreference(existingWebsite)))) {
+   changes.website = chosenWebsite;
+   fields.push('website');
+  }
+  // Country / province / city / district are inferred from the stored city
+  // table (seed/geo-cn.json), never from the event name or a regex heuristic.
+  if (geo) {
+   const current = field => (Object.prototype.hasOwnProperty.call(changes, field) ? changes[field] : event[field]);
+   const inferred = geo.infer({
+    region: event.region,
+    country: current('country'),
+    province: current('province'),
+    city: current('city'),
+    district: current('district'),
+    venue: current('venue'),
+    name: event.name,
+   });
+   for (const field of ['country', 'province', 'city', 'district']) {
+    if (needsValue(current(field)) && inferred[field]) {
+     changes[field] = inferred[field];
+     fields.push(field);
+    }
+   }
+  }
 
   // A page often still shows last edition's dates (the next edition is not
   // announced yet). Keeping the verified date is useful, but it must not look
@@ -822,7 +958,15 @@ export function createEventJobs({
   if (needsValue(resolved('applicationDeadline'))) missing.push('未找到报名截止日期');
   if (needsValue(resolved('venue'))) missing.push('展馆待确认');
   if (needsValue(resolved('city'))) missing.push('城市待确认');
-  if (needsValue(resolved('website'))) missing.push('未找到官网链接');
+  if (websiteFromSearch) {
+   missing.push('官网链接来自搜索候选，待人工核验：' + websiteFromSearch);
+  }
+  if (needsValue(resolved('website'))) {
+   missing.push('未找到官网链接');
+   if (discoveredCandidates.length) {
+    missing.push('官网候选（待人工确认）：' + discoveredCandidates.slice(0, 2).map(item => item.url).join('、'));
+   }
+  }
   if (collected === 0) missing.push('未能采集官网或来源页面，待人工补充');
 
   const hasStartDate = !needsValue(resolvedStart);
@@ -853,8 +997,17 @@ export function createEventJobs({
   if (status !== event.status) changes.status = status;
 
   const existingNotes = Array.isArray(event.notes) ? event.notes : [];
-  const appendedNotes = [...conflicts, ...missing].filter(value => value && !existingNotes.includes(value));
-  if (appendedNotes.length) changes.notes = [...existingNotes, ...appendedNotes];
+  // Once a website is known, drop the stale "no website" / unverified-candidate
+  // notes from earlier runs so the detail panel reflects the current record.
+  const resolvedWebsite = Object.prototype.hasOwnProperty.call(changes, 'website') ? changes.website : event.website;
+  const WEBSITE_NOTE_PREFIXES = ['缺少可核验的官网或来源链接', '未找到官网链接', '官网候选（待人工确认）', '官网链接来自搜索候选'];
+  const baseNotes = resolvedWebsite
+   ? existingNotes.filter(note => !WEBSITE_NOTE_PREFIXES.some(prefix => String(note).startsWith(prefix)))
+   : existingNotes;
+  const appendedNotes = [...conflicts, ...missing].filter(value => value && !baseNotes.includes(value));
+  if (appendedNotes.length || baseNotes.length !== existingNotes.length) {
+   changes.notes = [...baseNotes, ...appendedNotes];
+  }
 
   if (Object.keys(changes).length) eventStore.patch(eventId, changes);
   await progress(`补全完成：采集 ${collected} 页，更新 ${fields.length} 个字段`);
@@ -865,6 +1018,7 @@ export function createEventJobs({
    fields: uniqueValues(fields),
    notes: appendedNotes,
    structured,
+   website: Object.prototype.hasOwnProperty.call(changes, 'website') ? changes.website : (event.website ?? ''),
   };
  }
 

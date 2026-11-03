@@ -16,7 +16,8 @@ import {hash as hashText, openDocumentStore} from './documents.mjs';
 import {openEventStore} from './event-store.mjs';
 import {createEventJobs} from './event-jobs.mjs';
 import {createScheduler} from './scheduler.mjs';
-import {buildDiscoveryQueries, createDeepSeekEventSearch, createRegistryScanSearch, loadCompanyProfile} from './event-search.mjs';
+import {buildDiscoveryQueries, createDeepSeekEventSearch, createDeepSeekWebSearch, createRegistryScanSearch, loadCompanyProfile} from './event-search.mjs';
+import {openGeoIndex} from './geo.mjs';
 
 const SOURCE_MIN_INTERVAL_MS = 30_000;
 
@@ -50,6 +51,8 @@ export function createTaskRunner({
  recipes: injectedRecipes,
  eventStore: injectedEventStore,
  eventSearch: injectedSearch,
+ eventWebSearch: injectedWebSearch,
+ geo: injectedGeo,
  eventJobs: injectedEventJobs,
  researchRunner: injectedResearch,
  now = () => Date.now(),
@@ -65,6 +68,8 @@ export function createTaskRunner({
  const eventStore = injectedEventStore ?? openEventStore({file: env.EVENTS_FILE || join(dataDir, 'events.json')});
  const researchRunner = injectedResearch ?? createResearchRunner({store, env});
  const company = loadCompanyProfile(env.COMPANY_SEED_FILE || 'seed/company-domel.json');
+ // Stored geography (country/province/city/district) for event inference.
+ const geo = injectedGeo ?? openGeoIndex({file: env.GEO_FILE || 'seed/geo-cn.json'});
 
  function approvedRecipe(domain) {
   try {
@@ -78,7 +83,7 @@ export function createTaskRunner({
  // without a model we scan the human-curated registry pages. The registry scan
  // is memoised because discovery asks once per generated query but the scan
  // itself is the same few pages; tests can still replace the adapter.
- const registryScan = env.DEEPSEEK_API_KEY ? null : createRegistryScanSearch({registry, collector, company});
+ const registryScan = env.DEEPSEEK_API_KEY ? null : createRegistryScanSearch({registry, collector, company, geo});
  let registryScanOnce = null;
  // Event jobs expect a plain function; adapters expose {search}. The registry
  // scan is memoised because discovery asks once per generated query but the
@@ -97,12 +102,24 @@ export function createTaskRunner({
   });
  const search = typeof searchAdapter === 'function' ? searchAdapter : args => searchAdapter.search(args);
 
+ // Enrichment uses a web search only to find candidate official pages; the
+ // fetched page still has to match the event name before it is accepted.
+ const webSearchAdapter = injectedWebSearch ?? (env.DEEPSEEK_API_KEY
+  ? createDeepSeekWebSearch({apiKey: env.DEEPSEEK_API_KEY, baseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'})
+  : null);
+ // Event jobs expect a plain function (like the discovery search adapter).
+ const webSearch = typeof webSearchAdapter === 'function'
+  ? webSearchAdapter
+  : (webSearchAdapter ? args => webSearchAdapter.search(args) : null);
+
  const eventJobs = injectedEventJobs ?? createEventJobs({
   eventStore,
   registry,
   collector,
   getRecipe: approvedRecipe,
   search,
+  webSearch,
+  geo,
   now,
   company,
   queries: (payload = {}) => buildDiscoveryQueries(company, {region: payload.region ?? 'cn', years: payload.years, limit: payload.queryLimit}),
@@ -205,6 +222,7 @@ export function createTaskRunner({
   researchRunner,
   handlers,
   applyRecipe,
+  geo,
   start() {
    if (started) return;
    started = true;

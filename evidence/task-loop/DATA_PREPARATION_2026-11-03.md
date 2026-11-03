@@ -1,5 +1,12 @@
 # Acceptance data preparation — 2026-11-03
 
+> Final iteration (geo + website enrichment): the acceptance scripts were re-run on a fresh
+> isolated `/tmp/lead-final2` directory. `--prepare` copied the demo projects, one real
+> `POST /api/v1/events/discover {region:"cn",limit:20}` produced 12 events, and
+> `scripts/ui-acceptance.mjs` itself applies the deterministic manual-correction PATCHes
+> (same product path as below). The numbers in the original report below (11 events) describe
+> the earlier `ff8ec2b` run; the final logs in this directory are from the re-run.
+
 Everything below lives in the isolated `/tmp/domel-acceptance` directory. The repository `.local/`
 was never written by the acceptance run (only copied from, once).
 

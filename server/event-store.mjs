@@ -19,13 +19,13 @@ export const AVAILABILITIES = ['linked', 'downloadable', 'restricted', 'unknown'
 // CSV column order is part of the contract: the spreadsheet import must not
 // shift when an event is missing a field. local-api.mjs uses the same list.
 export const EVENT_EXPORT_COLUMNS = [
- 'name', 'edition', 'startDate', 'endDate', 'city', 'country', 'venue', 'organizer', 'website',
+ 'name', 'edition', 'startDate', 'endDate', 'city', 'province', 'district', 'country', 'venue', 'organizer', 'website',
  'frequency', 'industries', 'scope', 'exhibitorCount', 'visitorCount', 'area', 'exhibitorListUrl',
  'exhibitorListStatus', 'applicationDeadline', 'boothPrice', 'ticketPrice', 'region', 'confidence',
  'status', 'sources', 'notes',
 ];
 
-const STRING_FIELDS = ['name', 'city', 'country', 'venue', 'organizer', 'website', 'frequency', 'scope', 'area', 'exhibitorListUrl', 'boothPrice', 'ticketPrice'];
+const STRING_FIELDS = ['name', 'city', 'province', 'district', 'country', 'venue', 'organizer', 'website', 'frequency', 'scope', 'area', 'exhibitorListUrl', 'boothPrice', 'ticketPrice'];
 const DATE_FIELDS = ['startDate', 'endDate', 'applicationDeadline'];
 const NUMBER_FIELDS = ['edition', 'exhibitorCount', 'visitorCount'];
 const ENUM_FIELDS = {
@@ -187,6 +187,8 @@ function emptyEvent() {
   startDate: null,
   endDate: null,
   city: '',
+  province: '',
+  district: '',
   country: '',
   venue: '',
   organizer: '',
@@ -556,6 +558,10 @@ export function openEventStore({file, now = () => Date.now()} = {}) {
  try {
   const parsed = JSON.parse(readFileSync(file, 'utf8'));
   if (parsed && Array.isArray(parsed.events)) state = {version: 1, events: parsed.events};
+  // Files written by an older build may miss newly added fields (for example
+  // province/district). Fill them from the current schema on load so API
+  // responses always have a complete MarketEvent shape.
+  state.events = state.events.map(event => ({...emptyEvent(), ...event}));
  } catch (error) {
   if (error?.code !== 'ENOENT') console.warn(`[event-store] Could not read ${file}: ${error instanceof Error ? error.message : String(error)}`);
  }

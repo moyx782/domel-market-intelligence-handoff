@@ -50,7 +50,7 @@ npm run dev             # 前端: http://127.0.0.1:5174
 测试、构建与验收：
 
 ```bash
-npm test                                          # 217 个 Node 测试
+npm test                                          # 230 个 Node 测试
 npm run build                                     # tsc + vite
 
 # 独立验收（脚本会准备隔离数据，不写仓库 .local/）：
@@ -89,8 +89,9 @@ server/
   source-registry.mjs  来源注册表 + 种子导入
   scheduler.mjs        到期来源 → source.collect
   documents.mjs        采集页面存储（URL 去重）
-  event-store.mjs      展会资料库 + 导出
-  event-jobs.mjs       event.discover / event.enrich handlers
+  event-store.mjs      展会资料库 + 导出（含 province/district）
+  event-jobs.mjs       event.discover / event.enrich handlers（官网查找/首页优先/地理推断）
+  geo.mjs              国家/省/市/区县存储表推断（seed/geo-cn.json）
   event-search.mjs     DeepSeek JSON 发现 + 注册表扫描兜底
   agent-config.mjs     MCP/Skills/Plugins/角色/CLI/OCR 配置
   agent-runtime.mjs    Pi Agent 会话（文件/Shell/MCP/Skills/插件）
@@ -113,11 +114,11 @@ src/
   messages-*.ts        新页面词条
   tasks-sources.css / events-agent.css  新页面样式
 
-tests/                 217 个 Node 测试
+tests/                 230 个 Node 测试
 tests/fixtures/        可执行 mock MCP server、API fakes、HTML/事件 fixtures
 scripts/               demo:lan、ui-acceptance、acceptance-api、agent-admin、pi spike
 evidence/ui-acceptance/ 浏览器验收截图与清单
-seed/                  company-domel.json、sources-cn.json
+seed/                  company-domel.json、sources-cn.json、geo-cn.json
 docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGENT_RUNTIME/
                        DOCUMENT_PARSING/DEPLOYMENT/TEAM_CONTRACTS/HOST_API(历史)…
 ```
@@ -148,13 +149,15 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 | 任务队列 | `tests/task-queue.test.mjs` 16 用例；`tests/task-runner.test.mjs` 5 个集成用例；`tests/task-api.test.mjs` |
 | 采集器 | `tests/collector.test.mjs` 23 用例（含本地 JS 壳页真实 Chrome 回退）；`tests/rate-limit.test.mjs`、`recipes.test.mjs` |
 | 来源/展会 | `tests/source-registry/scheduler/documents/event-store/event-jobs.test.mjs`；真实 discover 14 条候选、enrich 抓官网成功（2026-11-03） |
+| 展会官网补全 | enrich 对无官网事件用 DeepSeek 搜索候选、抓取匹配后写入官网（优先首页）；`tests/event-jobs-website.test.mjs`；演示库 27/31 事件有官网 |
+| 地理层级 | 国家/省/市/区县由 `seed/geo-cn.json` 存储表推断（`server/geo.mjs`，无正则）；`tests/geo.test.mjs`；`scripts/backfill-event-geo.mjs` 可离线补齐旧数据 |
 | 真实 DeepSeek 研究 | 2026-11-03：9 个候选 URL，抓 5 页，1 条 finding，状态 partial |
 | 只读助手 SSE | 真实模型 0.7s 返回；项目问题会调用 `list_findings` 并引用 Nidec |
 | Agent + MCP | 配置 stdio mock server 后，真实模型调用 `mcp__mock__echo` 得到 `echo:hello from mcp` |
 | Agent + 历史 | 真实 DeepSeek 对话一次，`agent/transcripts.json` 记录 user/assistant/toolCalls；`/api/v1/agent/sessions` 可读 |
-| 浏览器验收 | **187 项 PASS / 0 FAIL**，0 console/page error；六页 + 角色三态 + 中英 + 390×844 移动端（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
-| API 验收 | **174 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式契约）（见 `evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`） |
-| 测试/构建 | `npm test` 217/217；`npm run build` 通过 |
+| 浏览器验收 | **187 项 PASS / 0 FAIL**，0 console/page error；六页 + 角色三态 + 中英 + 390×844 移动端；展会详情含国家/省/市/区县与可点击官网/来源 URL（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
+| API 验收 | **175 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式契约）（见 `evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`） |
+| 测试/构建 | `npm test` 230/230；`npm run build` 通过 |
 | 生产模式 | 带同源 Origin：`/health` 200、`/` 构建产物、`/assets/*.js|css` 200、SPA 回退、`/api/v1/workspace` 200；`evil.test` Origin 访问 API 403（见 `evidence/task-loop/PRODUCTION_CHECK_2026-11-03.md`） |
 
 ## 未完成 / 半成品（不要当成已交付）
@@ -176,6 +179,8 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 - **单 worker、单 JSON**：本机 Demo 够用；接口留好，后续换 Postgres/分布式。
 - **插件 = Pi extension**：`agent/extensions/<slug>/`，admin 安装/卸载，user 开关，viewer 只读。
 - **Agent 能力默认全开**：文件读写/Shell/MCP/Skills/插件默认启用；T0 可显式关闭。
+- **地理用存储表**：国家/省/市/区县来自 `seed/geo-cn.json` 的城市/展馆表，不用名称正则猜测。
+- **官网补全**：enrich 先查已有官网/来源；没有时用搜索候选，抓取并匹配事件名后才写入官网，优先站点首页。
 - **展会资料只列事实与来源**，不提供"推荐参展/不参展"。
 - **来源是网址注册表**，不是已抓内容；研究和采集分开存储。
 
@@ -194,6 +199,8 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 11. **每域限流是进程内状态**：重启清空；单来源间隔写在注册表 `intervalSec`（≥30s）；403/WAF 会 `paused`，需人工恢复。
 12. **URL/域名规范化**：recipe 的 domain 用 hostname（不带 www）；同官网不同展示名的展会在 `event-store.upsert` 里合并；HTML 实体在 URL 规范化时解码。
 13. **展会 enrich 可能抽到上一届日期**：会写 notes 提示"下一届待确认"，未来筛选时注意。
+15. **官网候选不等于官网**：搜索候选只有抓取页面且标题/字段匹配事件名后才写入 `website`；抓不到时写入 `官网候选（待人工确认）` note。人工修正优先。
+16. **地理推断依赖 seed/geo-cn.json**：新增展会城市/展馆时先补表；旧数据升级后跑 `npm run event:backfill-geo`（需停服务）。
 14. **单 `.local/` 只能一个进程**：两个实例会互相覆盖 JSON 与队列。
 
 ## 接手第一小时
@@ -201,7 +208,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 ```bash
 cd domel-market-intelligence
 npm ci
-npm test                       # 期望 217 passed
+npm test                       # 期望 230 passed
 npm run build
 npm run demo:api               # API 8788
 npm run dev                    # 前端 5174

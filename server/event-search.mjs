@@ -99,6 +99,99 @@ function httpUrl(value) {
  }
 }
 
+const GENERIC_NAME_TOKENS = new Set([
+ 'china', 'chinese', 'international', 'exhibition', 'expo', 'show', 'fair', 'trade', 'the', 'and', 'for', 'of',
+ '中国', '国际', '展览会', '博览会', '展会', '展览', '大会', '第', '届',
+]);
+
+// Event names come back in mixed Chinese/English. Token matching is a cheap way
+// to check whether a search result / fetched page is really about this event
+// before the collector claims a page as the official website.
+export function eventNameTokens(name) {
+ const text = String(name ?? '').toLowerCase();
+ const latin = (text.match(/[a-z0-9]{3,}/g) ?? []).filter(token => !GENERIC_NAME_TOKENS.has(token));
+ const cjk = (text.match(/[\u4e00-\u9fa5]{2,}/g) ?? []).filter(token => !GENERIC_NAME_TOKENS.has(token));
+ return [...new Set([...latin, ...cjk])].slice(0, 12);
+}
+
+export function pageMatchesEvent(event, page = {}) {
+ const tokens = eventNameTokens(event?.name);
+ if (!tokens.length) return false;
+ const haystack = [
+  page.title,
+  ...Object.values(page.values ?? {}),
+ ].filter(value => typeof value === 'string').join(' ').toLowerCase();
+ return tokens.some(token => haystack.includes(token));
+}
+
+const JUNK_HOSTS = [
+ 'baidu.com', 'zhihu.com', 'sohu.com', '163.com', 'sina.com.cn', 'weibo.com', 'weixin.qq.com',
+ 'bilibili.com', 'douyin.com', 'xiaohongshu.com', 'google.com', 'bing.com', 'wikipedia.org',
+ 'hc360.com', 'chinaiol.com', 'rhvcmag.com', 'ehvacr.com', 'alibaba.com', 'made-in-china.com',
+];
+
+// Rank web results for "this event's official website" and drop obvious
+// aggregators/document files. Search relevance is not evidence on its own: the
+// caller only accepts the URL after the page was fetched and matched.
+export function rankEventWebsiteResults(event, results, {limit = 3} = {}) {
+ const tokens = eventNameTokens(event?.name);
+ const ranked = [];
+ for (const item of Array.isArray(results) ? results : []) {
+  const url = httpUrl(item?.url);
+  if (!url) continue;
+  let host;
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { continue; }
+  if (JUNK_HOSTS.some(junk => host === junk || host.endsWith('.' + junk))) continue;
+  if (/\.(pdf|docx?|pptx?|xlsx?|zip|rar)$/i.test(url)) continue;
+  const title = String(item.title ?? '');
+  const haystack = (host + ' ' + title + ' ' + url).toLowerCase();
+  let score = 0;
+  for (const token of tokens) if (haystack.includes(token)) score += token.length >= 5 ? 2 : 1;
+  if (/(官网|官方网站|official|homepage)/i.test(title)) score += 3;
+  if (/\/(news|article|blog|press|detail|contact|about|privacy)\//i.test(url)) score -= 2;
+  // The official website should be the site root (or a landing page), not a
+  // deep contact/about page. Only reward the root for results that already
+  // matched the event name: otherwise an unrelated one-segment URL would float
+  // to the top and waste fetch budget.
+  if (score > 0) {
+   let path = '';
+   try { path = new URL(url).pathname; } catch { /* invalid URLs were filtered above */ }
+   const segments = path.split('/').filter(Boolean);
+   if (segments.length === 0) score += 4;
+   else if (segments.length === 1) score += 2;
+  }
+  ranked.push({url, title, score});
+ }
+ ranked.sort((left, right) => right.score - left.score || left.url.length - right.url.length);
+ // When at least one result looks like the official event site, do not spend
+ // rate-limited fetch budget on zero-relevance results.
+ const best = ranked[0]?.score ?? 0;
+ return (best > 0 ? ranked.filter(item => item.score > 0) : ranked).slice(0, limit);
+}
+
+// `webSearch` adapter for event enrichment: search results are candidate URLs
+// only, never evidence by themselves. DeepSeek exposes its search tool next to
+// the chat endpoint already used for research.
+export function createDeepSeekWebSearch({apiKey, baseUrl = 'https://api.deepseek.com', fetchImpl = fetch, timeoutMs = 20000}) {
+ if (!apiKey) throw Error('DEEPSEEK_API_KEY is not configured');
+ const endpoint = String(baseUrl).replace(/\/$/, '') + '/v1/tools/search';
+ return {
+  async search({query, count = 8} = {}) {
+   const response = await fetchImpl(endpoint, {
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(Math.max(3000, timeoutMs)),
+    headers: {Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json'},
+    body: JSON.stringify({query: String(query ?? ''), count, need_content: false, ori_question: String(query ?? '').slice(0, 128)}),
+   });
+   if (!response.ok) throw Error('Web search failed (HTTP ' + response.status + ')');
+   const payload = await response.json().catch(() => { throw Error('Web search returned invalid JSON'); });
+   const results = Array.isArray(payload?.results) ? payload.results : [];
+   return results.map(item => ({url: httpUrl(item.url), title: String(item.title ?? item.name ?? '')})).filter(item => item.url);
+  },
+ };
+}
+
 const SYSTEM_PROMPT = [
  'You are a trade-show researcher for a European electric-motor manufacturer (Domel) entering China.',
  'Find real, publicly verifiable trade shows and exhibitions that match the company applications.',
@@ -174,7 +267,7 @@ export function createDeepSeekEventSearch({apiKey, model = 'deepseek-flash', bas
 
 // Heuristic extraction for registry pages: enough to propose candidates from
 // exhibition calendars without a model. Enrichment is what verifies them.
-export function extractEventCandidates(text, {url, limit = 20, years = CURRENT_YEARS()} = {}) {
+export function extractEventCandidates(text, {url, limit = 20, years = CURRENT_YEARS(), geo = null} = {}) {
  const yearSet = new Set(years.map(String));
  const lines = String(text ?? '').split(/\r?\n/).map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
  const found = [];
@@ -198,8 +291,12 @@ export function extractEventCandidates(text, {url, limit = 20, years = CURRENT_Y
   const key = name.toLowerCase() + '|' + startDate;
   if (seen.has(key)) continue;
   seen.add(key);
-  const city = inferCity(line);
-  const venue = inferVenue(line);
+  // Prefer the stored geography table; the built-in lists are only the
+  // no-geo fallback used by isolated tests.
+  const storedCity = geo ? geo.city(line) : null;
+  const storedVenue = geo ? geo.venue(line) : null;
+  const city = storedCity ? (storedCity.name ?? storedCity.city ?? '') : inferCity(line);
+  const venue = storedVenue ? (storedVenue.venue ?? '') : inferVenue(line);
   found.push({
    name,
    city,
@@ -241,7 +338,7 @@ function inferVenue(line) {
 // Fallback discovery without a model: read a few enabled registry pages and
 // extract date + exhibition lines. Network use is bounded by maxSources and a
 // short per-page timeout; the caller decides whether the result is acceptable.
-export function createRegistryScanSearch({registry, collector, company, maxSources = 6, years = CURRENT_YEARS()}) {
+export function createRegistryScanSearch({registry, collector, company, maxSources = 6, years = CURRENT_YEARS(), geo = null}) {
  return {
   async search({region = 'cn', limit = 20} = {}) {
    const sources = registry ? registry.list({region, enabled: true}).slice(0, maxSources) : [];
@@ -253,7 +350,7 @@ export function createRegistryScanSearch({registry, collector, company, maxSourc
    for (const source of sources) {
     try {
      const page = await collector.collect(source.url, {allowPlaywright: false});
-     if (page.ok) candidates.push(...extractEventCandidates(page.text, {url: source.url, years, limit}));
+     if (page.ok) candidates.push(...extractEventCandidates(page.text, {url: source.url, years, limit, geo}));
      else notices.push(source.url + ': ' + (page.error?.message ?? 'unavailable'));
     } catch (error) {
      notices.push(source.url + ': ' + (error instanceof Error ? error.message : 'failed'));

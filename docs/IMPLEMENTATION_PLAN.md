@@ -324,7 +324,7 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 | M2 | 任务页 + 研究接入 | 实时状态，可取消/重试 | ✅ `src/Tasks.tsx`，SSE + 轮询降级，浏览器验收通过 |
 | M3a | Node 采集器（HTTP/Readability/Playwright） | 静态页、JS 壳页、超时、超大页、去重 | ✅ `tests/collector.test.mjs`（23，含真实 Chrome 回退）、`rate-limit`（9）、`recipes`（7） |
 | M3b | 来源注册表 + 调度 + 每域令牌桶 | 30s、Crawl-delay、429 退避、启停 | ✅ 30 个种子来源；`tests/source-registry`（12）、`scheduler`（6） |
-| M3c | 中国展会来源 + event.discover/enrich + 展会页 | 首批 20+ 来源；候选入库；核验；导出 | ✅ 30 来源；真实 discover 入库 10+ 事件、enrich 抓官网；CSV/JSON 导出；`tests/event-store`（8）、`event-jobs`（15）、`event-search`（9） |
+| M3c | 中国展会来源 + event.discover/enrich + 展会页 | 首批 20+ 来源；候选入库；核验；导出 | ✅ 30 来源；真实 discover 入库 10+ 事件、enrich 抓官网；官网自动查找（搜索候选→抓取匹配→首页优先）；国家/省/市/区县存储表推断；CSV/JSON 导出；相关测试 50+ |
 | M3d | 文档可获取性 + MinerU 配置/状态/接口预定义 | 只给链接与状态；official/local 配置可读；不强行 OCR | ✅ probe 分类 + `POST /events/:id/parse` 预定义（未配置 409，已配置 501） |
 | M4a | 四级权限 + 设置页三态 | 权限矩阵全绿 | ✅ `tests/permissions.test.mjs` + API 权限测试 + 浏览器角色三态 |
 | M4b | 插件目录 + 管理 UI | 安装/卸载/开关；测试扩展可被调用 | ✅ 设置页 Plugins；`tests/agent-config`、`agent-mcp` |
@@ -378,3 +378,19 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
    来源注册表页取代。
 6. **额外能力**：任务 SSE 断线补快照、任务页轮询降级、Agent 运行历史、展会 URL
    HTML 实体解码、历史届次提示、同官网不同名合并——这些是验收中发现问题后的修复。
+
+## 17. 迭代（2026-11-03）：地理层级与官网补全
+
+用户复核发现：展会详情里国家/地区为空、部分展会没有官网、来源 URL 不可见。处理如下：
+
+1. **存储式地理表**：新增 `seed/geo-cn.json`（国家/省/市/区县 + 展馆层级）与
+   `server/geo.mjs`。事件国家/省/市/区县从城市/展馆表推断，不再用事件名正则猜测；
+   `MarketEvent` 新增 `province` / `district` 字段（API/UI/CSV 导出均包含）。
+2. **官网补全**：`event.enrich` 在没有官网/来源时通过 DeepSeek Web Search 找候选，
+   抓取页面并校验标题/字段与事件名匹配后才写入 `website`；优先站点首页而非
+   contact/about 深层页；抓不到时把候选 URL 写进 notes 待人工确认。
+3. **来源 URL 可见**：展会详情“已核验来源/文档”直接显示 URL 文本（可点击），不再只显示标题。
+4. **旧数据补齐**：`scripts/backfill-event-geo.mjs`（`npm run event:backfill-geo`）离线
+   补齐旧事件的国家/省/市/区县并清理过期的“缺少官网”notes。
+5. 新增测试 `tests/geo.test.mjs`、`tests/event-jobs-website.test.mjs`；全量测试 230、
+   浏览器 187、API 175 均通过（2026-11-03 重跑）。

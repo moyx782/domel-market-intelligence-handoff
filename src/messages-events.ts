@@ -94,6 +94,8 @@ registerMessages({
  'End date': '结束日期',
  'Application deadline': '报名截止日期',
  'City': '城市',
+ 'Province': '省份/地区',
+ 'District / county': '区/县',
  'Country': '国家/地区',
  'Venue': '展馆',
  'Organizer': '主办方',

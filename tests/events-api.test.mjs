@@ -125,7 +125,7 @@ test('event export produces JSON and CSV downloads with escaped cells', async ()
   assert.match(csvResponse.headers.get('content-disposition'), /domel-events\.csv/);
   const csv = await csvResponse.text();
   const lines = csv.split('\n');
-  assert.equal(lines[0], 'name,edition,startDate,endDate,city,country,venue,organizer,website,frequency,industries,scope,exhibitorCount,visitorCount,area,exhibitorListUrl,exhibitorListStatus,applicationDeadline,boothPrice,ticketPrice,region,confidence,status,sources,notes');
+  assert.equal(lines[0], 'name,edition,startDate,endDate,city,province,district,country,venue,organizer,website,frequency,industries,scope,exhibitorCount,visitorCount,area,exhibitorListUrl,exhibitorListStatus,applicationDeadline,boothPrice,ticketPrice,region,confidence,status,sources,notes');
   assert.equal(lines.length, 3);
   assert.ok(lines[1].startsWith('中国制冷展 2026,'));
   assert.ok(lines.some(line => line.startsWith('"Messe, Frankfurt 2027"')));

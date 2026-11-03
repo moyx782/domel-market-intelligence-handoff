@@ -534,7 +534,8 @@ async function run() {
   equal('GET event CSV export returns 200', csv.status, 200);
   check('CSV export has text/csv content type', String(csv.headers.get('content-type') || '').includes('text/csv'), String(csv.headers.get('content-type')));
   const csvLines = csv.text.split('\n').filter(Boolean);
-  equal('CSV header keeps the fixed 25-column contract', csvLines[0]?.split(',').length, 25);
+  equal('CSV header keeps the fixed 27-column contract', csvLines[0]?.split(',').length, 27);
+  check('CSV header includes the stored geo columns', /(^|,)(province|district)(,|$)/.test(csvLines[0] || ''), String(csvLines[0] || '').slice(0, 200));
   equal('CSV row count equals events + header', csvLines.length, events.length + 1);
   check('CSV export carries attachment filename', String(csv.headers.get('content-disposition') || '').includes('domel-events.csv'), String(csv.headers.get('content-disposition')));
   const jsonExport = await request('/api/v1/events/export?format=json');

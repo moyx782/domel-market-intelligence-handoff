@@ -13,7 +13,7 @@ import {
 } from '../server/event-store.mjs';
 
 const MARKET_EVENT_FIELDS = [
- 'id', 'name', 'edition', 'startDate', 'endDate', 'city', 'country', 'venue', 'organizer', 'website',
+ 'id', 'name', 'edition', 'startDate', 'endDate', 'city', 'province', 'district', 'country', 'venue', 'organizer', 'website',
  'frequency', 'industries', 'scope', 'exhibitorCount', 'visitorCount', 'area', 'exhibitorListUrl',
  'exhibitorListStatus', 'documents', 'competitors', 'applicationDeadline', 'boothPrice', 'ticketPrice',
  'region', 'sources', 'confidence', 'status', 'notes', 'createdAt', 'updatedAt',

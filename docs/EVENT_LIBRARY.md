@@ -12,8 +12,9 @@
 | `server/recipes.mjs` | Agent/人工提出的选择器/正则/脚本 recipe 存储与沙箱执行 |
 | `server/documents.mjs` | 采集到的页面（按 URL 去重） |
 | `server/event-store.mjs` | 展会资料库（去重合并、过滤、CSV 导出） |
-| `server/event-jobs.mjs` | `event.discover` / `event.enrich` handler |
-| `server/event-search.mjs` | 发现来源：DeepSeek JSON 候选 + 无模型时注册表页面扫描兜底 |
+| `server/event-jobs.mjs` | `event.discover` / `event.enrich` handler（官网查找、首页优先、地理推断） |
+| `server/event-search.mjs` | 发现来源：DeepSeek JSON 候选 + 无模型时注册表页面扫描兜底；官网候选排序 |
+| `server/geo.mjs` + `seed/geo-cn.json` | 国家/省/市/区县/展馆存储表推断（不用名称正则） |
 | `src/Events.tsx` | 展会首页（筛选/时间轴/详情/补全/修正/导出） |
 | `src/Sources.tsx` | 来源注册表页 |
 
@@ -40,9 +41,13 @@ POST /api/v1/events/discover
 
 POST /api/v1/events/:id/enrich
   → 任务队列 event.enrich
-  → collector.collect(event.website + sources[])
+  → 有官网/来源：直接采集；没有：用 DeepSeek Web Search 找官网候选
+      → 候选页面抓取并校验标题/字段与事件名匹配 → 才写入 website
+      → 优先站点首页（/ 或一级路径），深层 contact/about 页会被升级/跳过
   → JSON-LD Event 优先，其次标题/正文启发式
+  → 国家/省/市/区县来自 seed/geo-cn.json（城市/展馆表），不用名称猜测
   → 只填有来源的字段；缺失写 notes（如 未找到报名截止日期、展馆待确认）
+  → 官网找不到时把候选 URL 写进 notes（官网候选（待人工确认）：...）
   → 文档链接用 collector.probe 分类 availability（linked/downloadable/restricted/unknown）
 ```
 
@@ -92,8 +97,10 @@ POST /api/v1/recipes/:id/test         # admin+：对真实页面执行一次 rec
 .local/source-registry.json   {version, sources[], domains{}}
 .local/documents.json         {version, documents[]}  采集页面，URL 去重
 .local/events.json            {version, events[]}     展会资料库
+                               事件含 country/province/city/district/venue 地理层级
 .local/recipes.json           {version, recipes[]}    recipe 存储
 .local/tasks.json             任务队列（见 docs/TASK_QUEUE.md）
+seed/geo-cn.json              国家/省/市/区县与展馆存储表（随仓库分发，不写 .local）
 ```
 
 删除对应 JSON 可重置；来源注册表在 sources 为空且文件不存在时会从
@@ -115,8 +122,21 @@ POST /api/v1/recipes/:id/test         # admin+：对真实页面执行一次 rec
 单测不联网：`tests/collector.test.mjs`（fixtures + 本地 JS 壳页，Chrome 缺失自动 skip）、
 `tests/rate-limit.test.mjs`、`tests/recipes.test.mjs`、`tests/source-registry.test.mjs`、
 `tests/scheduler.test.mjs`、`tests/documents.test.mjs`、`tests/event-store.test.mjs`、
-`tests/event-jobs.test.mjs`、`tests/event-search.test.mjs`、`tests/events-api.test.mjs`、
+`tests/event-jobs.test.mjs`、`tests/event-search.test.mjs`、`tests/geo.test.mjs`、
+`tests/event-jobs-website.test.mjs`、`tests/events-api.test.mjs`、
 `tests/sources-api.test.mjs`、`tests/recipes-api.test.mjs`。
+
+## 7. 升级与地理回填
+
+新增展会城市/展馆时，先扩展 `seed/geo-cn.json`（cities / venues 条目，含中英文别名、
+省份、区县），再部署。旧事件补齐国家/省/市/区县（并清理过期的"缺少官网"notes）：
+
+```bash
+# 单进程 JSON 存储：先停服务
+node scripts/backfill-event-geo.mjs          # 或 npm run event:backfill-geo
+# 可用 EVENTS_FILE / GEO_FILE 指向其他数据目录
+```
+
 
 真实抓取只在验收时执行：Domel 官网、公开展会官网与注册表页面；发现/补全的真实运行
 记录写在 `evidence/`。

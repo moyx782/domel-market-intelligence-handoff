@@ -28,7 +28,7 @@ const DEFAULT_ORIGINS = ['http://127.0.0.1:5174', 'http://127.0.0.1:5175', 'http
 // CSV export keeps a stable column order regardless of which event fields are
 // present, so a spreadsheet import does not shift columns between exports.
 const EVENT_EXPORT_COLUMNS = [
- 'name', 'edition', 'startDate', 'endDate', 'city', 'country', 'venue', 'organizer', 'website',
+ 'name', 'edition', 'startDate', 'endDate', 'city', 'province', 'district', 'country', 'venue', 'organizer', 'website',
  'frequency', 'industries', 'scope', 'exhibitorCount', 'visitorCount', 'area', 'exhibitorListUrl',
  'exhibitorListStatus', 'applicationDeadline', 'boothPrice', 'ticketPrice', 'region', 'confidence',
  'status', 'sources', 'notes',

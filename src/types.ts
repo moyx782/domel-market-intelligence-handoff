@@ -57,6 +57,8 @@ export type MarketEvent = {
  startDate:string|null;
  endDate:string|null;
  city:string;
+ province:string;
+ district:string;
  country:string;
  venue:string;
  organizer:string;

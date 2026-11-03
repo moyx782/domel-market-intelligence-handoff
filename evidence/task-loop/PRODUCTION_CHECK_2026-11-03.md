@@ -1,6 +1,8 @@
 # Production mode acceptance — 2026-11-03
 
-Code: commit `ff8ec2b` (frozen), build via `npm run build` (tsc -b + vite, 1645 modules, 1.5 s).
+Code: final M1–M5 iteration (geo + website enrichment). Build via `npm run build` (tsc -b + vite).
+The original production run was at commit `ff8ec2b`; the final iteration repeated the HTTP
+and browser checks with the current build (see logs, same filenames).
 Environment: Node v22.23.4, Chrome 156.0.8078.79, isolated data `/tmp/domel-acceptance-prod`
 (copy of the acceptance data dir; the repository `.local/` was not touched).
 
@@ -22,7 +24,7 @@ Command/log: `evidence/task-loop/PRODUCTION_HTTP_2026-11-03.log`.
 |---|---|
 | `GET /health` | 200 `{"status":"ok","architecture":"local-single-user"}` |
 | `GET /` + same-origin `Origin: http://127.0.0.1:8792` | 200 `text/html; charset=utf-8`, contains `id="root"`, references `/assets/index-ErZc3dlh.js` and `/assets/index-BhLpZxXR.css` |
-| `GET /assets/*.js` + same-origin `Origin` | 200 `text/javascript`, 440 013 bytes, immutable cache header |
+| `GET /assets/*.js` + same-origin `Origin` | 200 `text/javascript`, immutable cache header |
 | `GET /assets/*.css` + same-origin `Origin` | 200 `text/css`, 58 417 bytes |
 | `GET /events/deep/link` (SPA fallback) + same-origin `Origin` | 200 `text/html`, contains `id="root"` |
 | `GET /api/v1/workspace` + same-origin `Origin` | 200 JSON (2 projects) |

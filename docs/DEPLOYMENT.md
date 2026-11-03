@@ -42,13 +42,17 @@ LOCAL_API_BIND=0.0.0.0 LOCAL_API_PORT=8788 SERVE_STATIC=1 npm run start
 | `source-registry.json` | 来源注册表，首次从 `seed/sources-cn.json` 导入 30 个中国来源 |
 | `events.json` | 展会资料库 |
 | `documents.json` | 采集到的页面（URL 去重） |
+| 地理表 | `seed/geo-cn.json`（随代码分发；`GEO_FILE` 可覆盖） |
 | `recipes.json` | 采集 recipe（proposed/approved/disabled） |
 | `agent-config.json` | 角色、CLI 开关、OCR 配置、skills/plugins 元数据（0600） |
 | `agent/mcp.json` | MCP server 配置（0600） |
 | `agent/transcripts.json` | Agent 运行历史（Agent 页只读历史） |
+| `events.json` | 展会资料库（含国家/省/市/区县与来源） |
 | `agent/`、`workspaces/`、`assistant/` | Pi 会话、工作区、只读助手会话 |
 
 访问 `http://<host>:8788/`。`SERVE_STATIC=0` 可关闭静态服务（只跑 API）。
+
+**地理/官网数据**：展会国家/省/市/区县来自 `seed/geo-cn.json` 存储表（升级仓库后如需要可停服务运行 `npm run event:backfill-geo` 补齐旧事件）。展会补全会在没有官网时通过 DeepSeek Web Search 找候选并抓取核验。
 
 **采集器需要浏览器**：HTTP 抓取不需要任何东西；JS 壳页面回退 Playwright 时使用系统 Chrome（`CHROME_PATH` 或 `/usr/bin/google-chrome`）。服务器上没有 Chrome 时采集器仍能工作（只做 HTTP/Readability），只是缺少 JS 渲染回退。
 
@@ -148,6 +152,9 @@ node scripts/agent-admin.mjs show
 - **单进程**：见上，一个 `.local/` 只跑一个实例。
 - **任务队列**：API 与队列同进程；`SIGINT/SIGTERM` 会先停止队列（abort 运行中的 handler）再退出，重启自动恢复 queued/running 任务。
 - **来源调度**：启动后立即 tick 一次，把到期来源排入队列；默认每 30s 一次。单域请求间隔默认 5s，遇 403/WAF 会暂停该来源，需要人工在来源页处理。
+- **地理表**：`GEO_FILE`（默认 `seed/geo-cn.json`）；新增展会城市/展馆时补表，代码无需改。
+- **升级**：`git pull && npm ci && npm run build`；旧 `.local/events.json` 在读取时会自动补
+  `province`/`district` 空字段，离线回填用 `npm run event:backfill-geo`（先停服务）。
 - **MCP stdio**：`agent/mcp.json` 里的 `command`/`args` 用绝对路径；子进程继承工作区目录。
 - **MinerU**：默认关闭；官方 API 需 token，自建需独立服务与 GPU。见 [DOCUMENT_PARSING.md](DOCUMENT_PARSING.md)。
 - **内存**：Agent 会话、MCP 子进程、Playwright Chrome 可能常驻；建议 2 GB 以上。

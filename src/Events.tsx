@@ -166,6 +166,8 @@ type EditDraft = {
  startDate: string;
  endDate: string;
  city: string;
+ province: string;
+ district: string;
  venue: string;
  website: string;
  applicationDeadline: string;
@@ -181,6 +183,8 @@ function toDraft(event: MarketEvent): EditDraft {
   startDate: event.startDate ?? '',
   endDate: event.endDate ?? '',
   city: event.city,
+  province: event.province,
+  district: event.district,
   venue: event.venue,
   website: event.website,
   applicationDeadline: event.applicationDeadline ?? '',
@@ -216,6 +220,8 @@ function draftChanges(event: MarketEvent, draft: EditDraft): Partial<MarketEvent
  const applicationDeadline = draft.applicationDeadline || null;
  if (applicationDeadline !== event.applicationDeadline) changes.applicationDeadline = applicationDeadline;
  if (draft.city.trim() !== event.city) changes.city = draft.city.trim();
+ if (draft.province.trim() !== event.province) changes.province = draft.province.trim();
+ if (draft.district.trim() !== event.district) changes.district = draft.district.trim();
  if (draft.venue.trim() !== event.venue) changes.venue = draft.venue.trim();
  if (draft.website.trim() !== event.website) changes.website = draft.website.trim();
  if (draft.boothPrice.trim() !== event.boothPrice) changes.boothPrice = draft.boothPrice.trim();
@@ -311,6 +317,10 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
      </div>
      <div className="ev-form-two">
       <label>{t('City')}<input value={draft.city} onChange={event => update('city', event.target.value)} maxLength={120}/></label>
+      <label>{t('Province')}<input value={draft.province} onChange={event => update('province', event.target.value)} maxLength={120}/></label>
+     </div>
+     <div className="ev-form-two">
+      <label>{t('District / county')}<input value={draft.district} onChange={event => update('district', event.target.value)} maxLength={120}/></label>
       <label>{t('Venue')}<input value={draft.venue} onChange={event => update('venue', event.target.value)} maxLength={200}/></label>
      </div>
      <label>{t('Official website')}<input value={draft.website} onChange={event => update('website', event.target.value)} placeholder="https://" inputMode="url"/></label>
@@ -342,8 +352,10 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
         ? formatDay(event.applicationDeadline!, lang)
         : <span className="ev-empty-value">{t('To be confirmed')}</span>}
       </DetailField>
-      <DetailField label={t('City')}>{event.city || <span className="ev-empty-value">—</span>}</DetailField>
       <DetailField label={t('Country')}>{event.country || <span className="ev-empty-value">—</span>}</DetailField>
+      <DetailField label={t('Province')}>{event.province || <span className="ev-empty-value">—</span>}</DetailField>
+      <DetailField label={t('City')}>{event.city || <span className="ev-empty-value">—</span>}</DetailField>
+      <DetailField label={t('District / county')}>{event.district || <span className="ev-empty-value">—</span>}</DetailField>
       <DetailField label={t('Venue')}>{event.venue || <span className="ev-empty-value">{t('To be confirmed')}</span>}</DetailField>
       <DetailField label={t('Organizer')}>{event.organizer || <span className="ev-empty-value">—</span>}</DetailField>
       <DetailField label={t('Edition')}>{event.edition !== null ? event.edition : <span className="ev-empty-value">—</span>}</DetailField>
@@ -387,7 +399,7 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
          {competitor.participating === true ? t('Participating') : competitor.participating === false ? t('Not participating') : t('Unknown')}
         </span>
         {competitor.booth && <span className="ev-muted">{t('Booth {booth}', {booth: competitor.booth})}</span>}
-        {competitor.sourceUrl && <ExternalTextLink url={competitor.sourceUrl}>{t('Source')}</ExternalTextLink>}
+        {competitor.sourceUrl && <ExternalTextLink url={competitor.sourceUrl}>{competitor.sourceUrl}</ExternalTextLink>}
        </li>)}
       </ul>
      </section>}
@@ -397,6 +409,7 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
       <ul className="ev-documents">
        {event.documents.map(document => <li key={document.url}>
         <ExternalTextLink url={document.url}>{document.title || t('Open document')}</ExternalTextLink>
+        <span className="ev-doc-url">{document.url}</span>
         <span className="ev-doc-meta">
          <span className="badge ev-badge doc-type">{document.type || t('File')}</span>
          <AvailabilityBadge availability={document.status}/>
@@ -417,6 +430,7 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
        ? <ul className="ev-sources">
          {event.sources.map(source => <li key={source.url + source.verifiedAt}>
           <ExternalTextLink url={source.url}>{source.title || source.url}</ExternalTextLink>
+          <span className="ev-source-url">{source.url}</span>
           <span className="ev-muted">{t('Verified {date}', {date: formatDateTime(source.verifiedAt, lang)})}</span>
          </li>)}
         </ul>

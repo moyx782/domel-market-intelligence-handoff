@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {
- buildDiscoveryQueries, createDeepSeekEventSearch, createRegistryScanSearch,
- extractEventCandidates, loadCompanyProfile, normalizeCandidates,
+ buildDiscoveryQueries, createDeepSeekEventSearch, createDeepSeekWebSearch, createRegistryScanSearch,
+ eventNameTokens, extractEventCandidates, loadCompanyProfile, normalizeCandidates,
+ pageMatchesEvent, rankEventWebsiteResults,
 } from '../server/event-search.mjs';
 
 const company = {
@@ -144,4 +145,50 @@ test('the committed company seed can be loaded for discovery prompts', () => {
  assert.ok(profile.chinaEntity.name.includes('多麦机电'));
  const keywords = Array.isArray(profile.keywords) ? profile.keywords : Object.values(profile.keywords).flat();
  assert.ok(keywords.length > 0);
+});
+
+test('eventNameTokens keeps significant words and pageMatchesEvent checks title/values', () => {
+ const tokens = eventNameTokens('China International Fluid Machinery Exhibition 中国国际流体机械展览会');
+ assert.ok(tokens.includes('fluid'));
+ assert.ok(tokens.includes('machinery'));
+ assert.ok(!tokens.includes('china'));
+ assert.ok(!tokens.includes('international'));
+ assert.ok(tokens.some(token => token.includes('流体')));
+ assert.equal(pageMatchesEvent({name: 'China International Fluid Machinery Exhibition'}, {title: 'Fluid Machinery Expo 2027'}), true);
+ assert.equal(pageMatchesEvent({name: 'China International Fluid Machinery Exhibition'}, {title: 'Unrelated portal'}), false);
+});
+
+test('rankEventWebsiteResults drops aggregators and ranks official titles', () => {
+ const event = {name: 'China International Fluid Machinery Exhibition'};
+ const ranked = rankEventWebsiteResults(event, [
+  {url: 'https://www.baidu.com/s?wd=fluid', title: '百度搜索结果'},
+  {url: 'https://www.zhihu.com/question/1', title: '流体机械展怎么样'},
+  {url: 'https://www.fluidmachineryexpo.com/en/news/2026', title: '行业新闻'},
+  {url: 'https://www.fluidmachineryexpo.com/', title: 'China International Fluid Machinery Exhibition 官网'},
+ ], {limit: 3});
+ assert.equal(ranked.length, 2);
+ assert.equal(ranked[0].url, 'https://www.fluidmachineryexpo.com/');
+ assert.ok(!ranked.some(item => item.url.includes('baidu') || item.url.includes('zhihu')));
+});
+
+test('createDeepSeekWebSearch calls the provider search tool and normalizes results', async () => {
+ let captured;
+ const fetchImpl = async (url, init) => {
+  captured = {url, body: JSON.parse(init.body), auth: init.headers.Authorization};
+  return new Response(JSON.stringify({results: [
+   {url: 'https://www.fluidmachineryexpo.com/', title: 'Official'},
+   {url: 'not-a-url', title: 'Broken'},
+  ]}), {status: 200, headers: {'Content-Type': 'application/json'}});
+ };
+ const webSearch = createDeepSeekWebSearch({apiKey: 'test-key', fetchImpl, timeoutMs: 1000});
+ const results = await webSearch.search({query: '中国国际流体机械展览会 官网', count: 8});
+ assert.equal(captured.url, 'https://api.deepseek.com/v1/tools/search');
+ assert.equal(captured.body.query, '中国国际流体机械展览会 官网');
+ assert.equal(captured.body.count, 8);
+ assert.equal(captured.auth, 'Bearer test-key');
+ assert.equal(results.length, 1);
+ assert.equal(results[0].url, 'https://www.fluidmachineryexpo.com/');
+ const failed = createDeepSeekWebSearch({apiKey: 'x', fetchImpl: async () => new Response('{}', {status: 429})});
+ await assert.rejects(failed.search({query: 'q'}), /HTTP 429/);
+ assert.throws(() => createDeepSeekWebSearch({apiKey: ''}), /DEEPSEEK_API_KEY/);
 });

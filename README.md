@@ -15,7 +15,8 @@
 | 任务页（统计、筛选、详情日志、取消/重试、SSE 实时） | ✅ |
 | Node 采集器：HTTP → Readability → Playwright（系统 Chrome）→ recipe | ✅ |
 | 来源注册表 + 调度器 + 每域令牌桶/robots/Crawl-delay/429 退避/403 暂停 | ✅ 30 个中国来源种子 |
-| 展会资料库：`event.discover` / `event.enrich`、去重合并、文档可获取性、CSV/JSON 导出 | ✅ |
+| 展会资料库：`event.discover` / `event.enrich`、官网自动查找、去重合并、文档可获取性、CSV/JSON 导出 | ✅ |
+| 展会地理层级：国家/省/市/区县从存储的城市表推断（`seed/geo-cn.json`），不用名称猜测 | ✅ |
 | 展会页（首页）：列表/时间轴、筛选、详情、发现/补全/手动修正/导出 | ✅ |
 | 来源页、Settings 的 MCP/Skills/Plugins/Recipes 管理 | ✅ |
 | Agent 页：SSE 对话、工具卡片、可中断、运行历史；viewer 只读历史 | ✅ |
@@ -57,7 +58,7 @@ Docker/systemd 与内网部署见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 | 页面 | 说明 |
 |---|---|
-| 展会（首页） | 地区（默认中国）/时间/状态/关键词筛选；列表↔时间轴；详情含全部字段、来源与核验时间、缺失说明、文档可获取性；发现/补全/手动修正/导出 CSV·JSON |
+| 展会（首页） | 地区（默认中国）/时间/状态/关键词筛选；列表↔时间轴；详情含全部字段（国家/省/市/区县/展馆/官网）、来源与核验时间、可点击的官网与来源 URL、缺失说明、文档可获取性；发现/补全/手动修正/导出 CSV·JSON |
 | 任务 | 统计、状态/类型筛选、任务详情（payload/result/error/日志时间线）、取消/重试；SSE 实时 + 轮询降级 |
 | 来源 | 注册表表格（URL/类型/地区/优先级/间隔/下次运行/状态）；开关、立即运行；admin 增删改、user 只能开关、viewer 只读 |
 | 项目 | 研究项目列表 → 进度/证据/审核/报告；保留只读助手 |
@@ -88,6 +89,7 @@ server/task-runner.mjs    队列 + research/source/event handlers 接线
 server/collector.mjs      HTTP→Readability→Playwright→recipe 采集链
 server/source-registry.mjs / scheduler.mjs / rate-limit.mjs
 server/event-store.mjs / event-jobs.mjs / event-search.mjs
+server/geo.mjs             国家/省/市/区县存储表推断（seed/geo-cn.json）
 server/recipes.mjs        recipe 存储 + vm 沙箱
 server/agent-runtime.mjs  Pi Agent 会话
 server/transcripts.mjs    Agent 运行历史
@@ -95,12 +97,13 @@ src/api.ts                前端唯一 API 客户端；src/types.ts 类型
 src/Events.tsx / Tasks.tsx / Sources.tsx / Agent.tsx / Settings.tsx / App.tsx
 seed/company-domel.json   预置公司档案（Domel/多麦机电苏州）
 seed/sources-cn.json      中国来源种子（30 个）
+seed/geo-cn.json          国家/省/市/区县与展馆地理表（展会地点推断）
 ```
 
 ## 测试与验收
 
 ```bash
-npm test                        # 217 个 Node 测试
+npm test                        # 230 个 Node 测试
 npm run build                   # tsc + vite
 
 # 独立验收（isolated data dir，脚本头注释有完整命令）：
@@ -118,7 +121,7 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 
 - 浏览器：**187 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
   + 390×844 移动端。清单与截图：`evidence/ui-acceptance/`。
-- API：**174 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式
+- API：**175 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式
   契约）。日志：`evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`。
 - 生产模式：单进程 `SERVE_STATIC=1` 下 `/`、`/assets/*`、SPA 回退、`/api/v1/workspace`
   带同源 Origin 全部 200，`evil.test` Origin 访问 API 403；见
@@ -133,7 +136,9 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 4. [docs/EVENT_LIBRARY.md](docs/EVENT_LIBRARY.md) — 来源注册表/采集器/展会资料库
 5. [docs/AGENT_RUNTIME.md](docs/AGENT_RUNTIME.md) — MCP/Skills/Plugins/角色/会话历史
 6. [docs/DOCUMENT_PARSING.md](docs/DOCUMENT_PARSING.md) — MinerU 配置与解析边界
-7. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 内网部署（systemd/Docker）
+7. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 内网部署（systemd/Docker）；升级后可用
+   `npm run event:backfill-geo` 补齐旧事件的国家/省/市/区县
+8. [docs/TEAM_CONTRACTS.md](docs/TEAM_CONTRACTS.md) — 并行开发接口契约（保留作参考）
 8. [docs/TEAM_CONTRACTS.md](docs/TEAM_CONTRACTS.md) — 并行开发接口契约（保留作参考）
 
 历史文档（Supabase host 路线，本期不在范围）：`docs/HOST_API.md`、

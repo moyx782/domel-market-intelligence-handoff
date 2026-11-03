@@ -207,6 +207,11 @@
 .ev-empty-value { color: #a3ada6; font-size: 11px; }
 .ev-scale { display: flex; flex-direction: column; gap: 2px; }
 .ev-muted { color: #8b9a90; font-size: 10px; overflow-wrap: anywhere; }
+/* Source and document URLs are shown as selectable text next to the link: the
+   title alone ("Search result", "PDF document") hides which page a fact came
+   from, which matters more than the label in this evidence workflow. */
+.ev-source-url,
+.ev-doc-url { display: block; max-width: 100%; font-size: 10px; line-height: 1.45; color: #6c7f73; overflow-wrap: anywhere; word-break: break-all; }
 
 .ev-subsection h3 {
  margin: 18px 0 8px;
