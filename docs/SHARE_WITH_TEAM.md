@@ -17,18 +17,29 @@
 - **质量基线**：`npm test` **234/234**；浏览器验收 **187/187**、API 验收 **175/175**、
   生产模式检查全过、0 console/page error（2026-11-03，见 `evidence/`）。
 
-## 2. 拿到代码（三选一）
+## 2. 拿到代码（四选一）
 
-### A. 内网 Git（推荐）
+### A. GitHub 私有仓库（当前 handoff 仓库，推荐）
+
+仓库：<https://github.com/moyx782/domel-market-intelligence-handoff>（**private**，
+默认分支就是 `feature/task-loop-handoff`）。先让 Lead 把你的 GitHub 账号加为 collaborator
+（Settings → Collaborators，或 `gh repo edit --add-collaborator <你的用户名>`），然后：
 
 ```bash
-git clone <你的内网仓库地址> domel-market-intelligence
-cd domel-market-intelligence
-git switch feature/task-loop-handoff     # 本分支包含 M1–M5 + 最新迭代
-git log --oneline -8                      # 确认最新提交
+git clone https://github.com/moyx782/domel-market-intelligence-handoff.git
+cd domel-market-intelligence-handoff
+git log --oneline -8                      # HEAD 应为 7e8e297 或更新
 ```
 
-### B. 离线 bundle（没有 Git 服务器时）
+### B. 内网 Git 裸仓库（团队都在内网时）
+
+```bash
+git clone <用户名>@192.168.1.10:/srv/git/domel-market-intelligence.git domel-market-intelligence
+cd domel-market-intelligence
+git switch feature/task-loop-handoff
+```
+
+### C. 离线 bundle（没有 Git 服务器时）
 
 Lead 已导出：
 
@@ -39,7 +50,7 @@ cd domel-market-intelligence
 git switch feature/task-loop-handoff
 ```
 
-### C. 压缩包
+### D. 压缩包
 
 ```bash
 cd /home/sfwh/pi-agent-core
@@ -173,7 +184,9 @@ API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run
 
 > 大家好，Domel 展会资料 Demo 的 M1–M5 已完成并验收（任务队列/任务页、Node 采集器、
 > 来源注册表、中国展会资料库、来源页、Agent 页、设置页 MCP/Skills/Plugins/Recipes，
-> 四级角色）。代码在 `feature/task-loop-handoff` 分支，Node ≥22.19：
+> 四级角色）。代码在 GitHub 私有仓库
+> https://github.com/moyx782/domel-market-intelligence-handoff （分支
+> `feature/task-loop-handoff`，需要我加你为 collaborator），Node ≥22.19：
 > `npm ci` → 私发要 `.env.host`（DeepSeek key）→ `npm run demo:api` + `npm run dev`，
 > 打开 5174。先读 `docs/HANDOFF.md`，再读 `docs/IMPLEMENTATION_PLAN.md` 和
 > `docs/EVENT_LIBRARY.md`。基线：`npm test` 234/234、`npm run build` 通过、当前演示在
