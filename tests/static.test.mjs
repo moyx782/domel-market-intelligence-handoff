@@ -33,6 +33,12 @@ test('the API process serves the built frontend and falls back to index.html', a
   assert.equal(spa.status, 200);
   assert.match(await spa.text(), /id="root"/);
 
+  // Vite emits crossorigin asset tags; the browser sends Origin even same-origin.
+  const assetWithOrigin = await fetch(base + '/assets/app.js', {headers: {Origin: base}});
+  assert.equal(assetWithOrigin.status, 200);
+  const apiWithOrigin = await fetch(base + '/api/v1/capabilities', {headers: {Origin: 'https://evil.test'}});
+  assert.equal(apiWithOrigin.status, 403);
+
   const api = await fetch(base + '/api/v1/not-a-route');
   assert.equal(api.status, 404);
   assert.match(api.headers.get('content-type'), /json/);

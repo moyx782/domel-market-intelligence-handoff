@@ -31,6 +31,24 @@ async function listen({role = 'admin', env = {}, parts = {}} = {}) {
 
 const json = (url, init) => fetch(url, {...init, headers: {'Content-Type': 'application/json', ...(init?.headers ?? {})}});
 
+test('CORS preflight allows the methods the management UI uses', async () => {
+ const ctx = await listen();
+ try {
+  const response = await fetch(ctx.url + '/api/v1/sources/x', {
+   method: 'OPTIONS',
+   headers: {'Origin': 'http://127.0.0.1:5174', 'Access-Control-Request-Method': 'DELETE'},
+  });
+  assert.equal(response.status, 200);
+  const allowed = response.headers.get('access-control-allow-methods') || '';
+  for (const method of ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS']) {
+   assert.ok(allowed.includes(method), 'preflight must allow ' + method);
+  }
+  assert.equal(response.headers.get('access-control-allow-origin'), 'http://127.0.0.1:5174');
+ } finally {
+  await ctx.close();
+ }
+});
+
 test('running research schedules a durable task instead of the inline drain', async () => {
  const ctx = await listen({env: {DEEPSEEK_API_KEY: 'test-key'}});
  try {

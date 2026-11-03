@@ -442,7 +442,6 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
  const [view, setView] = useState<'list' | 'timeline'>('list');
 
  const [events, setEvents] = useState<MarketEvent[] | null>(null);
- const [count, setCount] = useState(0);
  const [loading, setLoading] = useState(true);
  const [loadError, setLoadError] = useState('');
 
@@ -459,18 +458,22 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
  const selectedRef = useRef<string | null>(null);
  selectedRef.current = selectedId;
 
+ // Only region/status/keyword are server filters. The date range is applied on
+ // the client because event-store.list() drops records with startDate=null when
+ // from/to are present, and undated records must stay visible for enrichment.
  const filter = useMemo<EventFilter>(() => {
   const next: EventFilter = {};
   if (region) next.region = region;
-  if (range !== 'all') {
-   const now = new Date();
-   next.from = isoDay(now);
-   next.to = isoDay(addMonths(now, RANGE_MONTHS[range]));
-  }
   if (status !== 'all') next.status = status;
   if (q.trim()) next.q = q.trim();
   return next;
- }, [region, range, status, q]);
+ }, [region, status, q]);
+
+ const rangeWindow = useMemo(() => {
+  if (range === 'all') return null;
+  const now = new Date();
+  return {from: isoDay(now), to: isoDay(addMonths(now, RANGE_MONTHS[range]))};
+ }, [range]);
 
  const load = useCallback(async () => {
   const ticket = ++requestTicket.current;
@@ -480,7 +483,6 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
    const payload = await listEvents(filter);
    if (ticket !== requestTicket.current) return;
    setEvents(payload.events);
-   setCount(payload.count);
    // Keep the open detail in sync without dropping records outside the filter.
    setDetail(previous => previous ? payload.events.find(item => item.id === previous.id) ?? previous : previous);
   } catch (cause) {
@@ -503,9 +505,23 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
  }, [qInput]);
 
  const trimmed = useMemo(() => events ?? [], [events]);
- const sorted = useMemo(() => [...trimmed].sort((left, right) =>
+
+ // Records without a confirmed date are never hidden by the date range: the
+ // product requires "date to be confirmed" events to stay visible so they can
+ // be enriched or corrected. event-store.list() would drop them when from/to
+ // are passed, which is why the range is filtered here instead.
+ const visible = useMemo(() => {
+  if (!rangeWindow) return trimmed;
+  return trimmed.filter(event => {
+   const start = event.startDate;
+   if (!start || !hasDate(start)) return true;
+   return start >= rangeWindow.from && start <= rangeWindow.to;
+  });
+ }, [trimmed, rangeWindow]);
+
+ const sorted = useMemo(() => [...visible].sort((left, right) =>
   (left.startDate ?? '9999-99-99').localeCompare(right.startDate ?? '9999-99-99') || left.name.localeCompare(right.name)),
- [trimmed]);
+ [visible]);
 
  const groups = useMemo(() => {
   const buckets = new Map<string, MarketEvent[]>();
@@ -609,6 +625,9 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
 
  const activeId = selectedId;
  const showEmpty = !loading && !loadError && sorted.length === 0;
+ const libraryEmpty = trimmed.length === 0;
+ const searchFiltersActive = Boolean(q.trim()) || region !== 'cn' || status !== 'all';
+ const noEventsAtAll = libraryEmpty && !searchFiltersActive;
 
  return <div className="events-page">
   <div className="page-heading">
@@ -683,7 +702,7 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
      ? t('Loading events…')
      : loadError
       ? t('Events could not be loaded.')
-      : t('{count} events match these filters.', {count})}
+      : t('{count} events match these filters.', {count: sorted.length})}
     {detailError && <span className="ev-inline-error"> {t('The selected event could not be refreshed.')}</span>}
    </p>
   </section>
@@ -702,21 +721,21 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
     </section>}
 
     {showEmpty && <section className="panel padded ev-empty">
-     <CalendarDays size={30}/>
-     <h2>{trimmed.length === 0 && !q && region === 'cn' ? t('No events in the library yet') : t('No events match these filters')}</h2>
-     <p>{trimmed.length === 0 && !q
-      ? canWrite
-       ? t('Start by discovering trade shows from the source registry, then enrich the promising ones.')
-       : t('No events have been discovered yet. A user or admin can start a discovery task.')
-      : t('Adjust the region, date range, status or search words.')}</p>
-     <div className="ev-empty-actions">
-      {canWrite && <button className="primary" onClick={() => void handleDiscover()} disabled={busy === 'discover'}>
-       {busy === 'discover' ? <LoaderCircle className="spin" size={16}/> : <Plus size={16}/>} {t('Discover events')}
-      </button>}
-      {!canWrite && <button className="secondary" onClick={onOpenTasks}>{t('Open tasks')}</button>}
-      <button className="secondary" onClick={() => { setQInput(''); setStatus('all'); setRange('all'); setRegion(''); }}>{t('Clear filters')}</button>
-     </div>
-    </section>}
+      <CalendarDays size={30}/>
+      <h2>{noEventsAtAll ? t('No events in the library yet') : t('No events match these filters')}</h2>
+      <p>{noEventsAtAll
+       ? canWrite
+        ? t('Start by discovering trade shows from the source registry, then enrich the promising ones.')
+        : t('No events have been discovered yet. A user or admin can start a discovery task.')
+       : t('Adjust the region, date range, status or search words.')}</p>
+      <div className="ev-empty-actions">
+       {canWrite && <button className="primary" onClick={() => void handleDiscover()} disabled={busy === 'discover'}>
+        {busy === 'discover' ? <LoaderCircle className="spin" size={16}/> : <Plus size={16}/>} {t('Discover events')}
+       </button>}
+       {!canWrite && <button className="secondary" onClick={onOpenTasks}>{t('Open tasks')}</button>}
+       <button className="secondary" onClick={() => { setQInput(''); setStatus('all'); setRange('all'); setRegion(''); }}>{t('Clear filters')}</button>
+      </div>
+     </section>}
 
     {!loading && !loadError && view === 'list' && sorted.length > 0 &&
      <div className="ev-cards">

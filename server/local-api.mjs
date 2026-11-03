@@ -69,20 +69,34 @@ export function localApiServer({store, assistant, agentStore, agentRuntime, tran
 
  return createServer(async (req, res) => {
   const origin = req.headers.origin;
-  const originAllowed = !origin || origins.includes(origin);
-  const cors = originAllowed && origin ? {'Access-Control-Allow-Origin': origin, Vary: 'Origin'} : {};
+  // Same-origin requests also carry Origin when the page requests an asset with
+  // crossorigin (Vite emits such tags), so compare hosts before applying the
+  // cross-origin allowlist. This keeps the allowlist for real cross-origin UI
+  // calls without breaking the single-process production build.
+  const sameOrigin = (() => {
+   if (!origin) return false;
+   try { return new URL(origin).host === req.headers.host; } catch { return false; }
+  })();
+  const originAllowed = !origin || sameOrigin || origins.includes(origin);
+  const cors = origin && origins.includes(origin) ? {'Access-Control-Allow-Origin': origin, Vary: 'Origin'} : {};
   const send = (status, data) => {
    res.writeHead(status, {'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors});
    res.end(JSON.stringify(data));
   };
   const deny = action => send(403, {error: 'Requires ' + requiredRole(action) + ' role', requiredRole: requiredRole(action)});
-  if (!originAllowed) return send(403, {error: 'Frontend origin is not allowed'});
+  const path = new URL(req.url, 'http://localhost').pathname;
+  // CORS applies to the API only. Static assets carry Vite's `crossorigin`
+  // attribute, so a browser sends an Origin header even same-origin; rejecting
+  // those would break the production UI served from this same process.
+  if (!originAllowed && path.startsWith('/api/')) return send(403, {error: 'Frontend origin is not allowed'});
   if (req.method === 'OPTIONS') {
    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS');
+   // The dev setup runs the page and API on different ports, so deletions
+   // (sources, MCP servers, skills, plugins, recipes) and raw MCP replacement
+   // need their real methods in the preflight response.
+   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
    return send(200, {});
   }
-  const path = new URL(req.url, 'http://localhost').pathname;
   if (path === '/health' && req.method === 'GET') return send(200, {status: 'ok', architecture: 'local-single-user'});
   let body = {};
   if (['POST', 'PATCH'].includes(req.method)) {
