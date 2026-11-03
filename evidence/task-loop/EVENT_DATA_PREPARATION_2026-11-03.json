@@ -1,0 +1,133 @@
+{
+ "discover": [
+  {
+   "id": "ab56b869",
+   "result": {
+    "region": "cn",
+    "candidates": 19,
+    "created": 11,
+    "merged": 8,
+    "skipped": 0,
+    "queries": [
+     "多麦机电（苏州）有限公司 Electric motors and drives HVAC and ventilation Professional and home appliances 中国 展会 博览 2026 展位 报名 展馆",
+     "多麦机电（苏州）有限公司 Electric motors and drives HVAC and ventilation Professional and home appliances 中国 展会 博览 2027 展位 报名 展馆",
+     "Electric motors and drives HVAC and ventilation 中国 展会 博览 2026 exhibitor list booth price"
+    ],
+    "events": [
+     "c714884a-2584-4807-965d-c26cab6aaa6f",
+     "60407d91-ff38-43b0-8441-c2d82525776d",
+     "d093aa59-a734-404f-ae77-c35230c83840",
+     "073aa713-eda5-4f44-93bc-46416dbe1026",
+     "ac414e24-2dcc-4988-a501-07bd935f33df",
+     "c714884a-2584-4807-965d-c26cab6aaa6f",
+     "eb7e8d43-47ca-4289-a1ad-927d82623642",
+     "60407d91-ff38-43b0-8441-c2d82525776d",
+     "d093aa59-a734-404f-ae77-c35230c83840",
+     "073aa713-eda5-4f44-93bc-46416dbe1026",
+     "629c7ffb-8122-4c11-b470-6dadce6a360e",
+     "218fb0b0-6fe2-4bb6-84c3-f41cca60b50c",
+     "c714884a-2584-4807-965d-c26cab6aaa6f",
+     "eb7e8d43-47ca-4289-a1ad-927d82623642",
+     "d093aa59-a734-404f-ae77-c35230c83840",
+     "073aa713-eda5-4f44-93bc-46416dbe1026",
+     "1f4f9731-bcfc-4b73-9b86-b61a6f5129fc",
+     "4f87f77a-a964-45a3-bd3d-3955c33c4335",
+     "a08b6cd2-2b09-4573-9907-e448bdecbc89"
+    ]
+   }
+  }
+ ],
+ "enrich": [
+  {
+   "id": "6b12b3cf",
+   "state": "succeeded",
+   "result": {
+    "eventId": "60407d91-ff38-43b0-8441-c2d82525776d",
+    "collected": 1,
+    "fields": [],
+    "notes": [
+     "多来源城市不一致：Shanghai / 上海，待人工确认",
+     "官网当前显示上一届 2026-10-23，下一届日期待确认",
+     "未找到展会结束日期",
+     "未找到报名截止日期"
+    ],
+    "structured": false
+   }
+  },
+  {
+   "id": "6cb3a12f",
+   "state": "succeeded",
+   "result": {
+    "eventId": "629c7ffb-8122-4c11-b470-6dadce6a360e",
+    "collected": 1,
+    "fields": [
+     "startDate",
+     "endDate",
+     "country",
+     "organizer",
+     "documents",
+     "exhibitorListUrl"
+    ],
+    "notes": [
+     "多来源城市不一致：Shanghai / 上海，待人工确认",
+     "多来源展馆不一致：National Exhibition and Convention Center (Shanghai) / 国家会展中心（上海），待人工确认",
+     "未找到报名截止日期"
+    ],
+    "structured": false
+   }
+  },
+  {
+   "id": "b8d6c6aa",
+   "state": "succeeded",
+   "result": {
+    "eventId": "1f4f9731-bcfc-4b73-9b86-b61a6f5129fc",
+    "collected": 1,
+    "fields": [
+     "startDate",
+     "endDate",
+     "country"
+    ],
+    "notes": [
+     "多来源城市不一致：Shanghai / 北京，待人工确认",
+     "官网当前显示上一届 2026-10-28 至 2026-10-30，下一届日期待确认",
+     "未找到报名截止日期"
+    ],
+    "structured": false
+   }
+  },
+  {
+   "id": "285162c1",
+   "state": "succeeded",
+   "result": {
+    "eventId": "218fb0b0-6fe2-4bb6-84c3-f41cca60b50c",
+    "collected": 1,
+    "fields": [],
+    "notes": [
+     "未找到展会开始日期",
+     "未找到展会结束日期",
+     "未找到报名截止日期"
+    ],
+    "structured": false
+   }
+  },
+  {
+   "id": "a577bd90",
+   "state": "succeeded",
+   "result": {
+    "eventId": "60407d91-ff38-43b0-8441-c2d82525776d",
+    "collected": 1,
+    "fields": [
+     "startDate",
+     "country"
+    ],
+    "notes": [
+     "多来源城市不一致：Shanghai / 上海，待人工确认",
+     "官网当前显示上一届 2026-10-23，下一届日期待确认",
+     "未找到展会结束日期",
+     "未找到报名截止日期"
+    ],
+    "structured": false
+   }
+  }
+ ]
+}

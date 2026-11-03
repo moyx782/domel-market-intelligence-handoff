@@ -50,10 +50,15 @@ npm run dev             # 前端: http://127.0.0.1:5174
 测试、构建与验收：
 
 ```bash
-npm test                                          # 213 个 Node 测试
+npm test                                          # 217 个 Node 测试
 npm run build                                     # tsc + vite
-BASE=http://127.0.0.1:5174 npm run test:ui        # 浏览器验收（需 demo 在跑）
-npm run test:api                                  # API 验收（需 demo 在跑）
+
+# 独立验收（脚本会准备隔离数据，不写仓库 .local/）：
+node scripts/acceptance-api.mjs --prepare         # 准备 /tmp/domel-acceptance
+# 起 API 8791 + vite 5176（VITE_BACKEND_URL=http://127.0.0.1:8791）后：
+BASE=http://127.0.0.1:5176 API_BASE=http://127.0.0.1:8791 \
+  ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run test:ui
+API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run test:api
 ```
 
 没有 `.env.host` 时：页面可用、审核与报告可用、来源采集可用；但研究、展会发现/补全、Agent 会返回配置错误。
@@ -108,7 +113,7 @@ src/
   messages-*.ts        新页面词条
   tasks-sources.css / events-agent.css  新页面样式
 
-tests/                 213 个 Node 测试
+tests/                 217 个 Node 测试
 tests/fixtures/        可执行 mock MCP server、API fakes、HTML/事件 fixtures
 scripts/               demo:lan、ui-acceptance、acceptance-api、agent-admin、pi spike
 evidence/ui-acceptance/ 浏览器验收截图与清单
@@ -147,9 +152,10 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 | 只读助手 SSE | 真实模型 0.7s 返回；项目问题会调用 `list_findings` 并引用 Nidec |
 | Agent + MCP | 配置 stdio mock server 后，真实模型调用 `mcp__mock__echo` 得到 `echo:hello from mcp` |
 | Agent + 历史 | 真实 DeepSeek 对话一次，`agent/transcripts.json` 记录 user/assistant/toolCalls；`/api/v1/agent/sessions` 可读 |
-| 浏览器验收 | 六页 + 角色三态 + 移动端 + 中英，0 console/page error（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
-| 测试/构建 | `npm test` 213/213；`npm run build` 通过 |
-| 生产模式 | `/health` 200、`/` 返回构建产物、`/assets/*.js` 200、SPA 回退、`/api/v1/workspace` 200 |
+| 浏览器验收 | **187 项 PASS / 0 FAIL**，0 console/page error；六页 + 角色三态 + 中英 + 390×844 移动端（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
+| API 验收 | **174 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式契约）（见 `evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`） |
+| 测试/构建 | `npm test` 217/217；`npm run build` 通过 |
+| 生产模式 | 带同源 Origin：`/health` 200、`/` 构建产物、`/assets/*.js|css` 200、SPA 回退、`/api/v1/workspace` 200；`evil.test` Origin 访问 API 403（见 `evidence/task-loop/PRODUCTION_CHECK_2026-11-03.md`） |
 
 ## 未完成 / 半成品（不要当成已交付）
 
@@ -195,12 +201,16 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 ```bash
 cd domel-market-intelligence
 npm ci
-npm test                       # 期望 213 passed
+npm test                       # 期望 217 passed
 npm run build
 npm run demo:api               # API 8788
 npm run dev                    # 前端 5174
-BASE=http://127.0.0.1:5174 npm run test:ui    # 浏览器验收
-npm run test:api               # API 验收
+# 独立验收（隔离数据，见「先跑起来」段的完整命令）：
+node scripts/acceptance-api.mjs --prepare
+# 起 8791 API + 5176 vite 后：
+BASE=http://127.0.0.1:5176 API_BASE=http://127.0.0.1:8791 \
+  ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run test:ui
+API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run test:api
 ```
 
 生产模式：

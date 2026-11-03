@@ -1,58 +1,203 @@
-# UI acceptance — single-user demo
+# UI acceptance — M1–M5 task loop, event library, agent and settings
 
-Date: 2026-11-03 (Asia/Tokyo)
-Browser: Google Chrome 156.0.8078.79, Playwright 1.49.1, 1440×1000 and 390×844
-Target: `http://192.168.1.10:5174` (LAN) with the local API on `http://192.168.1.10:8788`
-Data: `.local/domel.json`, one real DeepSeek research run (`Live check · EC motors Q3`)
+Date: 2026-11-03 (Asia/Shanghai)
+Code: commit `ff8ec2b` (four acceptance-found bugs fixed during the cycle; see below)
+Browser: Google Chrome 156.0.8078.79 via playwright-core 1.49.1, headless
+Viewports: 1440×1000 desktop and 390×844 mobile
+Frontend under test: `http://127.0.0.1:5176` (Vite dev server, `VITE_BACKEND_URL=http://127.0.0.1:8791`)
+API under test: `http://127.0.0.1:8791` (local demo API, frozen code)
+Data: isolated `/tmp/domel-acceptance` (never the repository `.local/`); see data note below
+Acceptance member: qa-verify (independent; no business code was modified during acceptance)
 
 ## Result
 
-49 checks passed, 0 failed, 0 console or page errors.
+**187 browser checks passed, 0 failed, 0 console errors, 0 page errors.**
 
-| Area | Checks |
+Command:
+
+```bash
+BASE=http://127.0.0.1:5176 API_BASE=http://127.0.0.1:8791 \
+  ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance node scripts/ui-acceptance.mjs
+```
+
+Full PASS/FAIL transcript: `evidence/task-loop/UI_ACCEPTANCE_2026-11-03.log`.
+
+| Area | Checks | Result |
+|---|---|---|
+| Six-page navigation, Events landing page, default filters | 13 | PASS |
+| Events: filters, cards, list/timeline, detail panel, CSV/JSON export, discover/enrich actions | 30 | PASS |
+| Tasks: statistics, state/kind filters, detail log, cancel/retry, SSE live update | 14 | PASS |
+| Sources: registry table, filters, enable toggle, run now, create validation, edit, delete | 16 | PASS |
+| Settings: seven sections, OCR endpoints, MCP/skills/plugins/recipes management, raw MCP PUT | 30 | PASS |
+| Agent: composer, seeded history, read-only transcript | 6 | PASS |
+| Projects: dashboard → insights → progress → report with saved version | 13 | PASS |
+| Bilingual switch (中文 ⇄ EN), persistence after reload | 8 | PASS |
+| Role viewer: read-only across Events/Tasks/Sources/Settings/Agent | 26 | PASS |
+| Role user: toggles and source run allowed, management blocked | 16 | PASS |
+| Restore admin role | 2 | PASS |
+| Mobile 390×844: six pages without horizontal overflow, drawer, event detail | 11 | PASS |
+| Error budget: 0 console errors, 0 pageerrors | 2 | PASS |
+
+## What was checked (highlights)
+
+- **Events (home)**: default region `cn` and range `12m`; undated events stay visible with
+  “Date to be confirmed” after the f2 fix; status/keyword/region filters; list ⇄ timeline;
+  completeness/confidence/status badges; detail panel with 16 fields, official link, verified
+  sources with timestamps, documents with availability badge, missing-data notes; CSV download
+  (`domel-events.csv`) and JSON download (`domel-events.json`); Discover/Enrich queue a task and
+  show a notice + link to Tasks.
+- **Tasks**: five state counters, state/kind filters, detail panel with payload/result/log
+  timeline and full task id, Cancel on a queued task, Retry on a cancelled task, and a task created
+  through the API appearing in the open page over SSE without a reload.
+- **Sources**: 30 seeded sources, region/type filters, enable toggle round-trip, Run now, add-source
+  validation (HTTPS and interval ≥ 30 s), create → appears in the table → delete → disappears,
+  edit priority modal.
+- **Settings**: all seven sections (Role & access, Agent tools, Document parsing, MCP servers,
+  Skills, Plugins, Recipes); OCR endpoints autofill; admin can toggle/add/remove MCP, toggle skills
+  and plugins, approve/disable recipes, and save the raw MCP JSON (PUT); the same page in
+  user/viewer states disables or hides the management actions.
+- **Agent**: admin composer and suggestions; two seeded read-only history transcripts; viewer has
+  no composer and can still open a transcript.
+- **Projects**: existing research flow pages still work; report version renders with approved
+  finding and limitations.
+- **Roles**: the workspace role is switched through `PATCH /api/v1/agent/settings` and restored to
+  admin at the end (file fallback is required by design after a demotion; the script writes only
+  the temporary `agent-config.json`).
+- **Mobile 390×844**: all six pages render without horizontal overflow; drawer opens/closes;
+  event detail panel opens without overflow.
+
+## Production mode
+
+Built with `npm run build`; a second build with `VITE_BACKEND_URL=http://127.0.0.1:8792` was used
+only for the browser end-to-end pass on port 8792, because the checked-in default build targets the
+documented demo port 8788. The single process served the UI and API on 8792 with
+`SERVE_STATIC=1 STATIC_DIR=/tmp/domel-prod-dist`.
+
+| Check | Result |
 |---|---|
-| Dashboard | LAN load, LOCAL DEMO badge, project row, approved/report counters |
-| Project navigation | completes to Insights, accepted badge, 1 / 1 accepted |
-| Review filters | All / Accepted / Rejected counts and empty states |
-| Evidence review | quote block, public source link, disabled Save, Accept action |
-| Progress | source count, host queue, assistant panel |
-| Assistant (SSE) | real answer streamed, tool-backed citation, streaming state clears |
-| Report | version selector, document, approved finding, limitations |
-| Language | 中文 switch without reload, Chinese nav labels and document title, choice persists after reload, switch back to EN |
-| Localized notices | stored coverage notices and report limitations render in Chinese, then English again |
-| Mobile 390×844 | dashboard, status column visible, drawer open, close button, backdrop |
-| Settings | role selector, agent tools section, OCR section, official/local API endpoint autofill |
+| `/health` | 200 `{"status":"ok","architecture":"local-single-user"}` |
+| `/` with same-origin `Origin` | 200 `text/html`, contains `id="root"` |
+| `/assets/*.js` with same-origin `Origin` | 200 `text/javascript` (440 KB) |
+| `/assets/*.css` with same-origin `Origin` | 200 `text/css` |
+| `/events/deep/link` SPA fallback with same-origin `Origin` | 200 `text/html` (`id="root"`) |
+| `/api/v1/workspace` with same-origin `Origin` | 200 JSON (2 projects) |
+| `/api/v1/workspace` with `Origin: https://evil.test` | **403** `Frontend origin is not allowed` |
+| `/api/v1/workspace` without `Origin` | 200 |
+| Browser E2E on 8792 (production bundle) | Event calendar renders 9 cards, 6 nav pages, SPA fallback renders, 0 console/page errors |
 
-Screenshots: `01-dashboard.png`, `01b-dashboard-zh.png` … `08-mobile-nav.png`, `09-settings.png`, plus Chinese `09-zh-insights.png`, `10-zh-evidence.png`, `11-zh-report.png`, `12-zh-mobile.png`, and localized-notice shots `04b-progress-zh.png`, `06b-report-zh.png` in this directory.
+Static files remain publicly readable regardless of `Origin` (the CORS gate applies to `/api/`);
+cross-origin scripts can be loaded but their responses are not exposed to foreign JS because no
+`Access-Control-Allow-Origin` is emitted. Full logs: `evidence/task-loop/PRODUCTION_HTTP_2026-11-03.log`
+and `PRODUCTION_BROWSER_2026-11-03.log`.
 
-## Defects found and fixed during acceptance
+## Defects found during acceptance (all fixed by the owner and retested)
 
-1. **Corrupted glyphs.** `src/App.tsx`, `src/HostQueue.tsx` and `src/DataSources.tsx` contained 80 U+FFFD replacement characters (`·`, `…`, `—`, `←`, `–`), rendered as diamonds/boxes. All replaced with the intended characters.
-2. **Favicon 404.** Every load logged `Failed to load resource: 404`. Added `public/favicon.svg` and a `<link rel="icon">`.
-3. **Mobile project table hid status.** Competitors and Updated columns pushed Status off-screen at 390 px. The compact table now keeps Project / Status / open, and hides Competitors / Updated.
-4. **Mobile drawer had no close.** Added an explicit Close button and a dimmed backdrop; both dismiss the drawer.
-5. **Assistant did not know the project.** Tools previously required a `projectId` the model never received, so project questions answered "share the project id". Tools are now bound to the current project; verified with a real LAN question that called `list_findings`.
+| # | Defect | Area | Fix commit |
+|---|---|---|---|
+| 1 | CORS preflight only advertised `GET,POST,PATCH,OPTIONS`, so cross-origin dev UI could not DELETE sources/MCP/skills/plugins or PUT raw MCP JSON | server | `3b76419` |
+| 2 | Production same-origin assets/`/`/SPA fallback returned 403 when the browser sent a same-origin `Origin` header (Vite `crossorigin`), blank page | server | `3b76419` |
+| 3 | Default Events view showed 0 records because the server-side date range dropped `startDate=null` events | src (f2) | `3b76419` |
+| 4 | Cancelling a running Playwright-fallback collection crashed the whole API process (unhandled `page.content()` rejection) | server | `5c1ae5e` |
+| 5 | `PUT /api/v1/agent/mcp` never parsed its request body, so “Save raw JSON” always failed with 409 | server | `ff8ec2b` |
 
-## Internationalization
+Regression coverage added: `collector-abort` tests for #4 and an API acceptance section that
+cancels a running JS-shell collection and then asserts `/health` twice; `task-api`/`agent-api`
+tests for #1/#5; `static.test.mjs` for #2; UI checks for #3 (undated events visible) and #5
+(raw JSON PUT).
 
-- English (`en`) and Simplified Chinese (`zh`) share one dictionary keyed by the English source string; missing entries fall back to English instead of showing a raw key.
-- `src/i18n.tsx` provides the provider, `useI18n()` and `Intl` locale selection. The switch lives in the header and on the login page, updates the whole tree in place (no reload), sets `<html lang>` and the document title, and persists to `localStorage` under `domel.lang`.
-- First visit follows the browser language (`zh-*` → Chinese, otherwise English).
-- Project data, user-entered competitors/focus areas and source quotations stay as entered. Server-generated coverage notices are translated at render time (`src/notices.ts`), so historical projects also follow the current language.
-- The notice translator covers the workflow, DeepSeek search/fetch and extraction messages; an unknown future message falls back to English.
-- The 中文/EN switch is covered by the browser acceptance run below.
+## Test data note (constructed vs. real)
 
-## Limits
+- The event library in `/tmp/domel-acceptance` was produced by **one real
+  `POST /api/v1/events/discover {region:"cn",limit:20}`** (DeepSeek search): task `ab56b869`,
+  19 candidates, 11 created, 8 merged, 0 failures. Four real `event.enrich` runs then fetched the
+  official sites (AWE/Building & Construction/CIIE/CRH); three returned dates/fields, all kept
+  “previous edition” notes.
+- To make filters/reporting deterministic the acceptance run applied the product’s own manual
+  correction (`PATCH /api/v1/events/:id`) to three undated records:
+  - Canton Fair (China Import and Export Fair) → 2027-02-10 … 2027-02-12, status verified
+  - China International HVAC and Building Services Exhibition → 2027-04-14 … 2027-04-16
+  - China International Industry Fair (CIIF) → 2027-06-09 … 2027-06-11
+  and recorded one document + one acceptance note on AWE (exhibitor list PDF, `downloadable`).
+  **These dates/notes are constructed for acceptance and are not real verification results.**
+- Five China events intentionally stayed undated to prove the “Date to be confirmed” visibility.
+- Agent history in the viewer checks comes from a two-session transcript fixture written by
+  `scripts/acceptance-api.mjs --prepare` before the API starts (no model call was made for this;
+  agent chat itself is covered by 403/400 API checks, not by a live model run).
+- The repository `.local/` directory was never modified. All data lives under `/tmp/domel-acceptance`.
 
-- Single browser (Chrome) and one viewport pair; no Firefox/Safari or screen-reader pass.
-- Chinese coverage is verified for the main flows; the login screen is not reachable in the local demo, so its Chinese copy is build-checked only.
-- The demo has no authentication and no per-user isolation; see README.
-- No rate limit or cost ceiling on assistant or research calls.
-- The UI test requires a running demo and Chrome; it is not part of `npm test`.
+## Screenshots (`evidence/ui-acceptance/`)
+
+| File | Content |
+|---|---|
+| `20-events-list.png` | Events home, default China/12m, undated cards visible |
+| `21-events-timeline.png` | Timeline view grouped by month + “Date to be confirmed” group |
+| `22-events-detail.png` | Event detail: fields, sources, documents, notes |
+| `23-tasks-list.png` | Task queue with five counters and live pill |
+| `24-tasks-detail.png` | Task detail: payload/result/log timeline |
+| `25-sources-admin.png` | Source registry table (admin) |
+| `26-settings-admin.png` | Settings, all seven sections (admin) |
+| `27-agent-admin.png` | Agent page with composer and history |
+| `28-projects-report.png` | Saved report version in the existing research flow |
+| `29-zh-tasks.png` | Chinese UI (Tasks) |
+| `30-viewer-events.png` | Viewer: Events details without write actions |
+| `31-viewer-sources.png` | Viewer: read-only sources |
+| `32-viewer-settings.png` | Viewer: settings read-only |
+| `33-viewer-agent.png` | Viewer: agent history, no composer |
+| `34-user-sources.png` | User: source toggles/run now, no management |
+| `35-user-settings.png` | User: settings toggle-only |
+| `36`–`41-mobile-*.png` | Six pages at 390×844 |
+| `42-mobile-nav.png` | Mobile drawer navigation |
+| `43-mobile-event-detail.png` | Mobile event detail |
+| `44-production-home.png` | Production bundle served by the API on 8792 |
+| `45-production-spa-fallback.png` | Production SPA fallback |
+
+Older `01`–`12` screenshots are kept for history.
 
 ## Reproduce
 
 ```bash
-npm run demo:lan
-BASE=http://192.168.1.10:5174 npm run test:ui
+# 1. isolated data dir + seeded transcripts / source registry
+rm -rf /tmp/domel-acceptance && node scripts/acceptance-api.mjs --prepare
+
+# 2. frozen-code API
+LOCAL_DATA_FILE=/tmp/domel-acceptance/domel.json LOCAL_DATA_DIR=/tmp/domel-acceptance \
+AGENT_DATA_DIR=/tmp/domel-acceptance AGENT_TRANSCRIPT_FILE=/tmp/domel-acceptance/agent/transcripts.json \
+AGENT_WORKSPACE_ROOT=/tmp/domel-acceptance/workspaces ASSISTANT_SESSION_DIR=/tmp/domel-acceptance/assistant \
+TASKS_FILE=/tmp/domel-acceptance/tasks.json EVENTS_FILE=/tmp/domel-acceptance/events.json \
+SOURCES_FILE=/tmp/domel-acceptance/source-registry.json DOCUMENTS_FILE=/tmp/domel-acceptance/documents.json \
+RECIPES_FILE=/tmp/domel-acceptance/recipes.json LOCAL_API_PORT=8791 LOCAL_API_BIND=127.0.0.1 \
+APP_ORIGINS=http://127.0.0.1:5176,http://127.0.0.1:5174,http://127.0.0.1:5175 \
+SOURCE_SCHEDULER_MS=3600000 SERVE_STATIC=0 \
+node --env-file-if-exists=.env --env-file-if-exists=.env.host server/local-api.mjs
+
+# 3. one real discovery + enrich (needs DEEPSEEK_API_KEY in .env.host)
+curl -X POST http://127.0.0.1:8791/api/v1/events/discover -H 'Content-Type: application/json' -d '{"region":"cn","limit":20}'
+# wait for the task, then POST /api/v1/events/:id/enrich for events with a website
+
+# 4. Vite dev server
+VITE_BACKEND_URL=http://127.0.0.1:8791 node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5176
+
+# 5. browser + API acceptance
+BASE=http://127.0.0.1:5176 API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance \
+  node scripts/ui-acceptance.mjs
+API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance node scripts/acceptance-api.mjs
+
+# 6. production mode
+npm run build
+LOCAL_API_PORT=8792 SERVE_STATIC=1 STATIC_DIR=dist ... node server/local-api.mjs
 ```
+
+If a run is interrupted while the role is not admin, restore it with
+`AGENT_DATA_DIR=/tmp/domel-acceptance node scripts/agent-admin.mjs role admin`
+(the script also restores admin in its `finally` block).
+
+## Limits
+
+- One browser engine (system Chrome) and two viewports; no Firefox/Safari or screen-reader pass.
+- The demo has no authentication; role checks are functional only (documented deployment boundary).
+- Production browser pass used a build bound to port 8792; the checked-in default build targets the
+  documented demo port 8788, which is served by the Lead's demo process during this cycle.
+- Network was used only for data preparation (one discovery run + four enrichments); assertions do
+  not depend on external site content.
+- `scripts/ui-acceptance.mjs` and `scripts/acceptance-api.mjs` are not part of `npm test`; they need
+  a running demo and Chrome.

@@ -100,20 +100,30 @@ seed/sources-cn.json      中国来源种子（30 个）
 ## 测试与验收
 
 ```bash
-npm test                        # 204 个 Node 测试
+npm test                        # 217 个 Node 测试
 npm run build                   # tsc + vite
 
-# 浏览器验收（需 demo 在跑）：
-BASE=http://127.0.0.1:5174 npm run test:ui
-# API 验收（需 demo 在跑）：
-npm run test:api
+# 独立验收（isolated data dir，脚本头注释有完整命令）：
+node scripts/acceptance-api.mjs --prepare
+# 起 API 8791 + VITE_BACKEND_URL 指向它的 vite 5176，然后：
+BASE=http://127.0.0.1:5176 API_BASE=http://127.0.0.1:8791 \
+  ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run test:ui
+API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run test:api
 
 # 生产模式自检：
 npm run serve                   # build + 单进程 UI+API；或 docker compose up -d
 ```
 
-浏览器验收覆盖六页、角色三态、移动端、中英切换，0 console/page error；证据与清单在
-`evidence/ui-acceptance/`。历史 host 路线的证据在 `evidence/runs/`，与本期本地 Demo 无关。
+验收结果（2026-11-03，独立验收环境）：
+
+- 浏览器：**187 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
+  + 390×844 移动端。清单与截图：`evidence/ui-acceptance/`。
+- API：**174 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式
+  契约）。日志：`evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`。
+- 生产模式：单进程 `SERVE_STATIC=1` 下 `/`、`/assets/*`、SPA 回退、`/api/v1/workspace`
+  带同源 Origin 全部 200，`evil.test` Origin 访问 API 403；见
+  `evidence/task-loop/PRODUCTION_CHECK_2026-11-03.md`。
+- 历史 host 路线的证据在 `evidence/runs/`，与本期本地 Demo 无关。
 
 ## 文档
 

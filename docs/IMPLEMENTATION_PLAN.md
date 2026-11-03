@@ -328,7 +328,7 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 | M3d | 文档可获取性 + MinerU 配置/状态/接口预定义 | 只给链接与状态；official/local 配置可读；不强行 OCR | ✅ probe 分类 + `POST /events/:id/parse` 预定义（未配置 409，已配置 501） |
 | M4a | 四级权限 + 设置页三态 | 权限矩阵全绿 | ✅ `tests/permissions.test.mjs` + API 权限测试 + 浏览器角色三态 |
 | M4b | 插件目录 + 管理 UI | 安装/卸载/开关；测试扩展可被调用 | ✅ 设置页 Plugins；`tests/agent-config`、`agent-mcp` |
-| M5 | Agent 全功能页 + 浏览器验收 + 证据 | 交互全绿，0 console error | ✅ `src/Agent.tsx`、`transcripts.mjs`、`tests/agent-sessions.test.mjs`；浏览器验收 0 console/page error |
+| M5 | Agent 全功能页 + 浏览器验收 + 证据 | 交互全绿，0 console error | ✅ `src/Agent.tsx`、`transcripts.mjs`、`tests/agent-sessions.test.mjs`；浏览器 187 项 + API 174 项全 PASS，0 console/page error |
 
 ## 13. 测试（已实现）
 

@@ -118,6 +118,19 @@ async function prepareData() {
  if (await roleNow() !== 'admin') {
   if (!(await forceRole('admin'))) throw Error('cannot restore admin role before preparation');
  }
+ // Let tasks from a previous round finish first: a late discover/enrich write
+ // would shift the expected event counts halfway through the run.
+ if (!(await drainQueue())) console.log('SETUP  warning: task queue did not drain before preparation');
+ // Remove leftovers from an interrupted run so the checks stay repeatable.
+ const staleSources = (await api('/api/v1/sources')).json?.sources ?? [];
+ for (const source of staleSources.filter(item => /qa-acceptance-ui\.example\.com/.test(item.url))) {
+  await api('/api/v1/sources/' + source.id, {method: 'DELETE'});
+ }
+ await api('/api/v1/agent/mcp/qa-ui-mcp', {method: 'DELETE'});
+ const staleConfig = (await api('/api/v1/agent/config')).json ?? {};
+ for (const skill of (staleConfig.skills ?? []).filter(item => /QA UI skill/i.test(String(item.name)))) {
+  await api('/api/v1/agent/skills/' + skill.id, {method: 'DELETE'});
+ }
  const eventsResponse = await api('/api/v1/events?limit=500');
  let events = eventsResponse.json?.events ?? [];
  if (!events.length) throw Error('event library is empty: start the API, run one POST /api/v1/events/discover (or --prepare --fixtures), then rerun');
@@ -131,26 +144,74 @@ async function prepareData() {
   return response.json ?? null;
  };
 
- // Three events get future dates so the default "next 12 months" filter has
- // data. This is the product's manual-correction path, not a hidden fixture.
- const undated = events.filter(event => !event.startDate);
- const hvac = pick([/hvac.*refrigeration/i, /refrigeration/i]);
- const motor = pick([/motor & drive/i, /motor and drive/i]);
- const smallMotor = pick([/small motor/i]);
- await patchEvent(hvac ?? undated[0], {startDate: '2027-03-10', endDate: '2027-03-12', city: 'Shanghai', country: 'China', venue: 'Shanghai New International Expo Centre (SNIEC)', status: 'verified', confidence: 'medium'});
- await patchEvent(motor ?? undated[1], {startDate: '2027-05-20', endDate: '2027-05-22', city: 'Shanghai', country: 'China', venue: 'National Exhibition and Convention Center (Shanghai)'});
- await patchEvent(smallMotor ?? undated[2], {startDate: '2027-09-01', endDate: '2027-09-03', city: 'Shanghai', country: 'China', venue: 'Shanghai New International Expo Centre (SNIEC)'});
+ // Every China event without a start date gets a future date inside the next
+ // 12 months. This uses the product's manual-correction PATCH: it makes the
+ // acceptance dataset deterministic, and the report lists these constructed
+ // dates separately from the real discovery/enrichment data.
+ const isoDay = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+ const addMonths = (date, months) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+ };
+ const today = new Date();
+ const from = isoDay(today);
+ const to6 = isoDay(addMonths(today, 6));
+ const to12 = isoDay(addMonths(today, 12));
+ const futureWindows = [
+  ['2027-02-10', '2027-02-12'], ['2027-04-14', '2027-04-16'], ['2027-06-09', '2027-06-11'],
+  ['2027-08-18', '2027-08-20'], ['2027-10-13', '2027-10-15'], ['2027-03-24', '2027-03-26'],
+ ];
+ // Only three China records are dated; the remaining undated ones stay
+ // "Date to be confirmed" so the default 12-month view is checked against the
+ // real discovery data shape (the f2 fix keeps undated events visible).
+ const undatedChina = events.filter(event => event.region === 'cn' && !event.startDate);
+ const constructedDates = [];
+ for (let index = 0; index < Math.min(3, undatedChina.length); index += 1) {
+  const [startDate, endDate] = futureWindows[index % futureWindows.length];
+  const updated = await patchEvent(undatedChina[index], {
+   startDate, endDate,
+   city: undatedChina[index].city || 'Shanghai',
+   country: undatedChina[index].country || 'China',
+  });
+  if (updated) constructedDates.push({name: updated.name, startDate, endDate});
+ }
+ // One verified event so the status filter has a deterministic non-empty target.
+ if (undatedChina[0]) await patchEvent(undatedChina[0], {status: 'verified', confidence: 'medium'});
 
  // The event detail panel needs at least one document with an availability
- // badge; the real enrich run found none, so the operator records the known
- // exhibitor-list link through PATCH (the same call the edit form uses).
- const awe = pick([/appliance.*electronics/i, /awe/i]) ?? events.find(event => (event.sources ?? []).length > 0);
- const documentsEvent = await patchEvent(awe, {
+ // badge; record the known exhibitor-list link through PATCH (same call as the
+ // edit form) plus one explicit missing-data note.
+ const detailEvent = pick([/appliance.*electronics/i, /awe/i]) ?? events.find(event => (event.sources ?? []).length > 0) ?? events[0] ?? null;
+ const documentsEvent = await patchEvent(detailEvent, {
   documents: [{url: 'https://www.awe.com.cn/exhibitor-list.pdf', title: 'AWE exhibitor list (PDF)', type: 'pdf', status: 'downloadable'}],
+  notes: ['Acceptance data note: the exhibitor list link is recorded for UI verification.'],
  });
  if (documentsEvent) console.log('SETUP  detail event: ' + documentsEvent.name);
 
  events = (await api('/api/v1/events?limit=500')).json?.events ?? events;
+ // Expected default view: China records, date range applied on the client, and
+ // undated records always visible (the shipped product behaviour).
+ const inWindow = event => !event.startDate || (event.startDate >= from && event.startDate <= to12);
+ const cnVisible = events.filter(event => event.region === 'cn' && inWindow(event));
+ const cnSixMonths = events.filter(event => event.region === 'cn'
+  && (!event.startDate || (event.startDate >= from && event.startDate <= to6)));
+ const euVisible = events.filter(event => event.region === 'eu'
+  && (!event.startDate || (event.startDate >= from && event.startDate <= to12)));
+ const statusCounts = {};
+ for (const event of cnVisible) statusCounts[event.status] = (statusCounts[event.status] ?? 0) + 1;
+ const statusCheck = Object.keys(statusCounts).find(status => statusCounts[status] > 0) ?? 'discovered';
+ const datedMonths = new Set(cnVisible.filter(event => event.startDate).map(event => event.startDate.slice(0, 7)));
+ const undatedVisible = cnVisible.filter(event => !event.startDate).length;
+ const monthCount = datedMonths.size + (undatedVisible > 0 ? 1 : 0);
+ const queryTerm = cnVisible.some(event => /motor/i.test(event.name))
+  ? 'motor'
+  : (String(cnVisible[0]?.name || 'china').split(/[^A-Za-z]+/).filter(word => word.length >= 5)[0] ?? 'china');
+ const queryCount = cnVisible.filter(event => [event.name, event.city, event.venue, ...(event.industries ?? [])].join(' ').toLowerCase().includes(queryTerm.toLowerCase())).length;
+ const defaultCount = cnVisible.length;
+ if (!defaultCount) throw Error('preparation left no visible China event');
+ console.log('SETUP  defaultCount=' + defaultCount + ' (undated=' + undatedVisible + ') sixMonth=' + cnSixMonths.length + ' eu=' + euVisible.length + ' months=' + monthCount + ' status=' + JSON.stringify(statusCounts) + ' query=' + queryTerm + ':' + queryCount);
+ if (constructedDates.length) console.log('SETUP  constructed dates: ' + JSON.stringify(constructedDates));
 
  // Settings sections need rows in the three role states.
  const config = (await api('/api/v1/agent/config')).json ?? {};
@@ -176,9 +237,25 @@ async function prepareData() {
  }
  const sources = (await api('/api/v1/sources')).json?.sources ?? [];
  const sessions = (await api('/api/v1/agent/sessions?projectId=general')).json?.sessions ?? [];
- console.log('SETUP  events=' + events.length + ' sources=' + sources.length + ' sessions=' + sessions.length + ' detailEvent=' + (awe?.name ?? 'none'));
+ console.log('SETUP  events=' + events.length + ' sources=' + sources.length + ' sessions=' + sessions.length + ' detailEvent=' + (detailEvent?.name ?? 'none'));
  if (sessions.length < 1) throw Error('no seeded agent sessions: run `node scripts/acceptance-api.mjs --prepare` before starting the API');
- return {events, sources, sessions, detailEventId: documentsEvent?.id ?? awe?.id ?? null, detailEventName: documentsEvent?.name ?? awe?.name ?? null};
+ return {
+  events, sources, sessions,
+  detailEventId: documentsEvent?.id ?? detailEvent?.id ?? null,
+  detailEventName: documentsEvent?.name ?? detailEvent?.name ?? null,
+  constructedDates,
+  expect: {
+   defaultCount,
+   sixMonthCount: cnSixMonths.length,
+   euCount: euVisible.length,
+   undatedVisible,
+   statusKey: statusCheck,
+   statusCount: statusCounts[statusCheck] ?? 0,
+   monthCount,
+   queryTerm,
+   queryCount,
+  },
+ };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +282,43 @@ async function waitMinCount(selector, minimum, timeout = 12000) {
  await page.waitForFunction(([sel, count]) => document.querySelectorAll(sel).length >= count, [selector, minimum], {timeout});
 }
 
+async function drainQueue(timeout = 90000) {
+ const deadline = Date.now() + timeout;
+ while (Date.now() < deadline) {
+  const tasks = (await api('/api/v1/tasks?limit=200')).json?.tasks ?? [];
+  const active = tasks.filter(task => task.state === 'queued' || task.state === 'running');
+  if (!active.length) return true;
+  await sleep(500);
+ }
+ return false;
+}
+
+// Expected number of records in the default China + next-12-months view, with
+// the current client policy that keeps undated events visible.
+async function currentDefaultCount() {
+ const isoDay = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+ const now = new Date();
+ const to12 = new Date(now);
+ to12.setMonth(to12.getMonth() + 12);
+ const from = isoDay(now);
+ const until = isoDay(to12);
+ const events = (await api('/api/v1/events?limit=500')).json?.events ?? [];
+ return events.filter(event => event.region === 'cn'
+  && (!event.startDate || (event.startDate >= from && event.startDate <= until))).length;
+}
+
+async function waitTaskState(id, state, timeout = 12000) {
+ const deadline = Date.now() + timeout;
+ let last = null;
+ while (Date.now() < deadline) {
+  const response = await api('/api/v1/tasks/' + id);
+  last = response.json;
+  if (last?.state === state) return last;
+  await sleep(200);
+ }
+ return last;
+}
+
 async function gotoPage(label, heading) {
  await page.locator('nav button').filter({hasText: label}).first().click();
  await page.getByRole('heading', {name: heading}).first().waitFor({timeout: 15000});
@@ -226,6 +340,27 @@ async function waitEvCount(expected, timeout = 12000) {
 
 function escapeRegExp(value) {
  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Success notices are rendered as role=status alerts; the events count line is
+// also role=status, so never use .last()/generic [role=status] selectors.
+async function successNotice(expected = null, timeout = 10000) {
+ try {
+  if (expected) {
+   await page.waitForFunction(needle => Array.from(document.querySelectorAll('.alert.success'))
+    .some(node => (node.textContent || '').includes(needle)), expected, {timeout});
+  } else {
+   await page.locator('.alert.success').first().waitFor({timeout});
+  }
+  return (await page.locator('.alert.success').allInnerTexts()).join(' | ');
+ } catch {
+  return '';
+ }
+}
+
+async function errorNotice() {
+ const texts = await page.locator('.alert.error').allInnerTexts().catch(() => []);
+ return texts.join(' | ');
 }
 
 // ---------------------------------------------------------------------------
@@ -300,57 +435,73 @@ try {
 
  // ============================================================== events
  section('Events: filters, cards, timeline, detail, export');
- await waitEvCount(3);
- equal('default China / next 12 months shows the three prepared events', await evCount(), 3);
- check('event cards render', await page.locator('.ev-card').count() === 3);
+ const expect = prepared.expect;
+ await waitEvCount(expect.defaultCount);
+ equal('default China / next 12 months shows the in-window events', await evCount(), expect.defaultCount);
+ check('event cards render', await page.locator('.ev-card').count() === expect.defaultCount);
  const firstCardText = await page.locator('.ev-card').first().innerText();
  check('card shows a date', /\d{4}/.test(firstCardText), firstCardText.split('\n')[0]);
  check('card shows completeness progress', await page.locator('.ev-card [role="progressbar"]').first().isVisible());
  check('card shows a status badge', await page.locator('.ev-card .badge').first().isVisible());
  check('card shows the confirm/venue/city meta', /Shanghai|China|SNIEC|Expo|Exhibition|Fair/i.test(firstCardText), firstCardText.slice(0, 120));
+ if (expect.undatedVisible > 0) {
+  check('default view keeps undated events visible (Date to be confirmed)',
+   await page.locator('.ev-card .ev-date-pending').count() >= 1,
+   'undated=' + expect.undatedVisible);
+ } else {
+  check('default view keeps undated events visible (Date to be confirmed)', true, 'no undated China event in this dataset');
+ }
 
- await setStatus('verified');
- await waitEvCount(1);
- check('status filter narrows the list to verified events', await evCount() === 1 && /Verified/.test(await page.locator('.ev-card').first().innerText()));
- await setStatus('discovered');
- await waitEvCount(2);
- check('status filter discovered shows two events', await evCount() === 2);
+ await setStatus(expect.statusKey);
+ await waitEvCount(expect.statusCount);
+ const statusLabels = {discovered: 'Discovered', enriched: 'Enriched', verified: 'Verified', archived: 'Archived'};
+ check('status filter narrows the list to ' + expect.statusKey + ' events',
+  expect.statusCount > 0 && new RegExp(statusLabels[expect.statusKey], 'i').test(await page.locator('.ev-card').first().innerText()),
+  'count=' + expect.statusCount);
  await setStatus('all');
- await waitEvCount(3);
+ await waitEvCount(expect.defaultCount);
 
  const search = page.getByLabel('Search events');
- await search.fill('motor');
- await waitEvCount(2);
- check('keyword search filters by name/city/venue', await evCount() === 2);
- check('keyword search results match the term', /motor/i.test(await page.locator('.ev-count').innerText()) || (await page.locator('.ev-card').allInnerTexts()).every(text => /motor/i.test(text)));
+ await search.fill(expect.queryTerm);
+ await waitEvCount(expect.queryCount);
+ check('keyword search filters by name/city/venue', expect.queryCount > 0 && await evCount() === expect.queryCount, 'q=' + expect.queryTerm + ' count=' + expect.queryCount);
+ check('keyword search keeps the matching cards', (await page.locator('.ev-card').allInnerTexts()).every(text => new RegExp(expect.queryTerm, 'i').test(text)));
  await search.fill('');
- await waitEvCount(3);
+ await waitEvCount(expect.defaultCount);
 
  await setRegion('eu');
- await waitEvCount(0);
- check('region filter eu yields an empty result state', await evCount() === 0 && await page.locator('.ev-empty').isVisible());
+ await waitEvCount(expect.euCount);
+ if (expect.euCount === 0) {
+  check('region filter eu yields an empty result state', await page.locator('.ev-empty').isVisible());
+ } else {
+  check('region filter eu shows only Europe events', await evCount() === expect.euCount, 'count=' + expect.euCount);
+ }
  await setRegion('cn');
- await waitEvCount(3);
+ await waitEvCount(expect.defaultCount);
 
  await setRange('6m');
- await waitEvCount(1);
- check('next-6-months range hides events outside the window', await evCount() === 1);
+ await waitEvCount(expect.sixMonthCount);
+ check('next-6-months range narrows the set', await evCount() === expect.sixMonthCount && expect.sixMonthCount <= expect.defaultCount, 'count=' + expect.sixMonthCount);
  await setRange('12m');
- await waitEvCount(3);
+ await waitEvCount(expect.defaultCount);
 
  await page.getByRole('button', {name: 'Timeline'}).click();
  await page.locator('.ev-timeline').waitFor({timeout: 10000});
- await waitCount('.ev-timeline-group', 3);
- check('timeline view groups events by month', await page.locator('.ev-timeline-group').count() === 3);
- check('timeline still renders all three cards', await page.locator('.ev-card').count() === 3);
+ await waitCount('.ev-timeline-group', expect.monthCount);
+ check('timeline view groups events by month', await page.locator('.ev-timeline-group').count() === expect.monthCount, 'groups=' + expect.monthCount);
+ check('timeline still renders every card', await page.locator('.ev-card').count() === expect.defaultCount);
+ if (expect.undatedVisible > 0) {
+  check('timeline groups undated events under Date to be confirmed',
+   /Date to be confirmed/.test(await page.locator('.ev-timeline').innerText()));
+ }
  await shot('21-events-timeline');
  await page.getByRole('button', {name: 'List'}).click();
  await page.locator('.ev-cards').waitFor({timeout: 10000});
 
  // Detail panel: use the event prepared with documents/sources and the "All
- // time" range so the enriched (past-dated) record is visible.
+ // time" range so enriched (past-dated) records are reachable too.
  await setRange('all');
- await waitMinCount('.ev-card', 4);
+ await waitMinCount('.ev-card', 1);
  const detailName = prepared?.detailEventName;
  if (detailName) {
   const card = page.locator('.ev-card').filter({hasText: detailName.slice(0, 24)}).first();
@@ -386,19 +537,17 @@ try {
   jsonDownload = await event;
  } catch { /* checked below */ }
  check('Export JSON downloads a .json file', Boolean(jsonDownload) && /\.json$/i.test(jsonDownload.suggestedFilename() || ''), jsonDownload ? jsonDownload.suggestedFilename() : 'no download event');
- await waitForText('[role="status"]', 'export downloaded');
- check('export shows a success notice', /downloaded/i.test(await page.locator('[role="status"]').last().innerText()));
+ check('export shows a success notice', /downloaded/i.test(await successNotice('export downloaded')));
 
- // Write actions for admin: discovery + enrichment queue real tasks; cancel
- // them immediately so acceptance stays inside the "one real discover" budget.
+ // Write actions for admin queue real tasks; cancel them immediately so the
+ // acceptance run stays within its real-network budget.
  check('admin sees the Discover events action', await page.getByRole('button', {name: 'Discover events'}).count() >= 1);
  await page.getByRole('button', {name: 'Discover events'}).first().click();
- await waitForText('[role="status"]', 'Discovery task queued');
- check('Discover events queues a task and shows a notice', /Discovery task queued/.test(await page.locator('[role="status"]').last().innerText()));
+ check('Discover events queues a task and shows a notice', /Discovery task queued/.test(await successNotice('Discovery task queued')));
  const discoverQueue = (await api('/api/v1/tasks?kind=event.discover&state=queued')).json?.tasks ?? [];
  for (const task of discoverQueue) await api('/api/v1/tasks/' + task.id + '/cancel', {method: 'POST', body: {}});
- const runExplore = (await api('/api/v1/tasks?kind=event.discover&state=running')).json?.tasks ?? [];
- for (const task of runExplore) await api('/api/v1/tasks/' + task.id + '/cancel', {method: 'POST', body: {}});
+ const runningDiscover = (await api('/api/v1/tasks?kind=event.discover&state=running')).json?.tasks ?? [];
+ for (const task of runningDiscover) await api('/api/v1/tasks/' + task.id + '/cancel', {method: 'POST', body: {}});
 
  if (detailName) {
   const card = page.locator('.ev-card').filter({hasText: detailName.slice(0, 24)}).first();
@@ -408,17 +557,17 @@ try {
    const enrich = page.getByRole('button', {name: 'Enrich details'});
    check('admin sees the Enrich details action in the detail panel', await enrich.count() >= 1);
    await enrich.click();
-   await waitForText('[role="status"]', 'Enrichment task queued');
-   check('Enrich details queues a task and shows a notice', /Enrichment task queued/.test(await page.locator('[role="status"]').last().innerText()));
+   check('Enrich details queues a task and shows a notice', /Enrichment task queued/.test(await successNotice('Enrichment task queued')));
    const enrichTasks = (await api('/api/v1/tasks?kind=event.enrich&limit=50')).json?.tasks ?? [];
-   for (const task of enrichTasks.filter(item => item.state === 'queued' || item.state === 'running')) {
+   for (const task of enrichTasks.filter(item => item.state === 'queued')) {
     await api('/api/v1/tasks/' + task.id + '/cancel', {method: 'POST', body: {}});
    }
    await closeDetails();
   }
  }
  await setRange('12m');
- await waitEvCount(3);
+ await waitEvCount(expect.defaultCount);
+
 
  // ================================================================ tasks
  section('Tasks: statistics, filters, detail log, cancel/retry, SSE');
@@ -439,7 +588,7 @@ try {
  const sseRun = await api('/api/v1/sources/' + (sseSources[3] ?? sseSources[0])?.id + '/run', {method: 'POST', body: {}});
  await page.waitForFunction(count => document.querySelectorAll('.task-table tbody tr').length > count, rowCountBefore, {timeout: 15000});
  check('new task appears in the open Tasks page over SSE (no reload)', true);
- if (sseRun.json?.task?.id) await api('/api/v1/tasks/' + sseRun.json.task.id + '/cancel', {method: 'POST', body: {}});
+ if (sseRun.json?.task?.id) { const current = await waitTaskState(sseRun.json.task.id, 'queued', 2000); if (current?.state === 'queued') await api('/api/v1/tasks/' + sseRun.json.task.id + '/cancel', {method: 'POST', body: {}}); }
 
  // Filters.
  const stateGroup = page.getByRole('group', {name: 'Filter task status'});
@@ -477,14 +626,14 @@ try {
   const row = page.locator('.task-table tbody tr').filter({hasText: secondTask.id.slice(0, 8)}).first();
   await row.waitFor({timeout: 10000});
   await row.locator('button', {hasText: 'Cancel'}).click();
-  await waitForText('[role="status"]', 'Task cancelled');
-  check('Cancel action on a queued task succeeds', /Task cancelled/.test(await page.locator('[role="status"]').last().innerText()));
+  check('Cancel action on a queued task succeeds', /Task cancelled/.test(await successNotice('Task cancelled')));
+  await waitTaskState(secondTask.id, 'cancelled', 15000);
   await stateGroup.getByRole('button', {name: /^Cancelled/}).click();
-  await page.waitForFunction(id => Array.from(document.querySelectorAll('.task-table tbody tr')).some(row => row.textContent.includes(id.slice(0, 8))), secondTask.id, {timeout: 12000});
+  await page.waitForFunction(id => Array.from(document.querySelectorAll('.task-table tbody tr')).some(row => row.textContent.includes(id.slice(0, 8))), secondTask.id, {timeout: 15000});
   const retryRow = page.locator('.task-table tbody tr').filter({hasText: secondTask.id.slice(0, 8)}).first();
   await retryRow.locator('button', {hasText: 'Retry'}).click();
-  await waitForText('[role="status"]', 'Task queued for another attempt');
-  check('Retry action on a cancelled task succeeds', /another attempt/.test(await page.locator('[role="status"]').last().innerText()));
+  const retryNotice = await successNotice('another attempt');
+  check('Retry action on a cancelled task succeeds', /another attempt/.test(retryNotice), retryNotice || await errorNotice());
   await api('/api/v1/tasks/' + secondTask.id + '/cancel', {method: 'POST', body: {}});
   if (runOne.json?.task?.id) await api('/api/v1/tasks/' + runOne.json.task.id + '/cancel', {method: 'POST', body: {}});
  } else {
@@ -523,8 +672,7 @@ try {
  const firstToggle = page.locator('input[aria-label^="Toggle source"]').first();
  const toggleWasChecked = await firstToggle.isChecked();
  await firstToggle.click();
- if (toggleWasChecked) await waitForText('[role="status"]', 'Source disabled');
- else await waitForText('[role="status"]', 'Source enabled');
+ await successNotice(toggleWasChecked ? 'Source disabled' : 'Source enabled');
  check('admin can toggle a source enabled flag', await firstToggle.isChecked() === !toggleWasChecked);
  await firstToggle.click();
  await page.waitForFunction(expected => {
@@ -534,10 +682,11 @@ try {
 
  const firstRun = page.locator('button[aria-label^="Run now"]').first();
  await firstRun.click();
- await waitForText('[role="status"]', 'Source run queued');
- check('Run now queues a source collection task', /Source run queued/.test(await page.locator('[role="status"]').last().innerText()));
+ check('Run now queues a source collection task', /Source run queued/.test(await successNotice('Source run queued')));
  const activeRuns = (await api('/api/v1/tasks?kind=source.collect&limit=50')).json?.tasks ?? [];
- for (const task of activeRuns.filter(item => item.state === 'queued' || item.state === 'running')) {
+ // Only cancel queued tasks: cancelling a running Playwright render is BUG-3
+ // (API process crash), reported separately, so the run must not trigger it.
+ for (const task of activeRuns.filter(item => item.state === 'queued')) {
   await api('/api/v1/tasks/' + task.id + '/cancel', {method: 'POST', body: {}});
  }
 
@@ -555,32 +704,38 @@ try {
  check('add-source form rejects an interval below 30 seconds', /30 seconds/.test(await page.locator('.validation').last().innerText()));
  await page.getByLabel('Interval (seconds)').fill('3600');
  await page.getByRole('button', {name: 'Create source'}).click();
- await waitForText('[role="status"]', 'Source created');
- check('admin can create a source', /Source created/.test(await page.locator('[role="status"]').last().innerText()));
+ const createNotice = await successNotice('Source created');
+ check('admin can create a source', /Source created/.test(createNotice), createNotice || await errorNotice());
  await waitForText('.sources-table', 'qa-acceptance-ui.example.com');
  check('new source appears in the registry table', await page.locator('.sources-table tbody tr').filter({hasText: 'qa-acceptance-ui.example.com'}).count() === 1);
  const uiRow = page.locator('.sources-table tbody tr').filter({hasText: 'qa-acceptance-ui.example.com'}).first();
  await uiRow.locator('button[aria-label^="Delete source"]').click();
- await waitForText('[role="status"]', 'Source deleted');
- check('admin can delete a source', /Source deleted/.test(await page.locator('[role="status"]').last().innerText()));
- await page.waitForFunction(() => !Array.from(document.querySelectorAll('.sources-table tbody tr')).some(row => row.textContent.includes('qa-acceptance-ui.example.com')), null, {timeout: 10000});
- check('deleted source disappears from the table', true);
+ const deleteNotice = await successNotice('Source deleted');
+ check('admin can delete a source', /Source deleted/.test(deleteNotice), deleteNotice || await errorNotice());
+ let deletedFromTable = false;
+ try {
+  await page.waitForFunction(() => !Array.from(document.querySelectorAll('.sources-table tbody tr')).some(row => row.textContent.includes('qa-acceptance-ui.example.com')), null, {timeout: 8000});
+  deletedFromTable = true;
+ } catch { /* the FAIL above carries the cause */ }
+ check('deleted source disappears from the table', deletedFromTable);
+ const staleSources = (await api('/api/v1/sources')).json?.sources ?? [];
+ for (const source of staleSources.filter(item => item.url.includes('qa-acceptance-ui.example.com'))) await api('/api/v1/sources/' + source.id, {method: 'DELETE'});
 
  // Edit interval/priority modal.
  const editRow = page.locator('.sources-table tbody tr').first();
  const priorityBefore = (/P([0-3])/.exec(await editRow.innerText()) || [])[1];
- const priorityInput = page.getByLabel('Priority');
+ const priorityInput = page.getByLabel('Priority', {exact: true});
  await editRow.locator('button[aria-label^="Edit source"]').click();
  await page.getByRole('dialog', {name: 'Edit interval and priority'}).waitFor({timeout: 10000});
  await priorityInput.fill(priorityBefore === '2' ? '3' : '2');
  await page.getByRole('button', {name: 'Save changes'}).click();
- await waitForText('[role="status"]', 'Source updated');
- check('admin can edit source priority/interval', /Source updated/.test(await page.locator('[role="status"]').last().innerText()));
+ const editNotice = await successNotice('Source updated');
+ check('admin can edit source priority/interval', /Source updated/.test(editNotice), editNotice || await errorNotice());
  await page.locator('.sources-table tbody tr').first().locator('button[aria-label^="Edit source"]').click();
  await page.getByRole('dialog', {name: 'Edit interval and priority'}).waitFor({timeout: 10000});
- await page.getByLabel('Priority').fill(priorityBefore ?? '1');
+ await page.getByLabel('Priority', {exact: true}).fill(priorityBefore ?? '1');
  await page.getByRole('button', {name: 'Save changes'}).click();
- await waitForText('[role="status"]', 'Source updated');
+ await successNotice('Source updated');
 
  // ============================================================= settings
  section('Settings: seven sections, OCR, MCP/skills/plugins/recipes three states');
@@ -606,10 +761,10 @@ try {
  const mcpToggle = page.locator('input[aria-label="Enable MCP server qa-acceptance-mcp"]');
  const mcpWas = await mcpToggle.isChecked();
  await mcpToggle.click();
- await waitForText('[role="status"]', mcpWas ? 'MCP server disabled' : 'MCP server enabled');
+ await successNotice(mcpWas ? 'MCP server disabled' : 'MCP server enabled');
  check('admin can toggle an MCP server', await mcpToggle.isChecked() === !mcpWas);
  await mcpToggle.click();
- await waitForText('[role="status"]', mcpWas ? 'MCP server enabled' : 'MCP server disabled');
+ await successNotice(mcpWas ? 'MCP server enabled' : 'MCP server disabled');
 
  const skillRow = page.locator('.settings-row').filter({hasText: 'QA acceptance skill'}).first();
  await skillRow.waitFor({timeout: 10000});
@@ -618,10 +773,10 @@ try {
  const skillToggle = page.locator('input[aria-label^="Enable skill QA acceptance skill"]').first();
  const skillWas = await skillToggle.isChecked();
  await skillToggle.click();
- await waitForText('[role="status"]', skillWas ? 'Skill disabled' : 'Skill enabled');
+ await successNotice(skillWas ? 'Skill disabled' : 'Skill enabled');
  check('admin can toggle a skill', await skillToggle.isChecked() === !skillWas);
  await skillToggle.click();
- await waitForText('[role="status"]', skillWas ? 'Skill enabled' : 'Skill disabled');
+ await successNotice(skillWas ? 'Skill enabled' : 'Skill disabled');
 
  const pluginRow = page.locator('.settings-row').filter({hasText: 'QA acceptance plugin'}).first();
  await pluginRow.waitFor({timeout: 10000});
@@ -632,42 +787,58 @@ try {
  await recipeRow.waitFor({timeout: 10000});
  check('recipes section lists the proposed recipe', await recipeRow.locator('strong', {hasText: 'qa-acceptance.example.com'}).count() === 1);
  await recipeRow.getByRole('button', {name: 'Approve'}).click();
- await waitForText('[role="status"]', 'Recipe approved');
- check('admin can approve a recipe', /Recipe approved/.test(await page.locator('[role="status"]').last().innerText()));
+ const approveNotice = await successNotice('Recipe approved');
+ check('admin can approve a recipe', /Recipe approved/.test(approveNotice), approveNotice || await errorNotice());
  await page.locator('.settings-table tbody tr').filter({hasText: 'qa-acceptance.example.com'}).first().getByRole('button', {name: 'Disable'}).click();
- await waitForText('[role="status"]', 'Recipe disabled');
- check('admin can disable a recipe', /Recipe disabled/.test(await page.locator('[role="status"]').last().innerText()));
+ const disableNotice = await successNotice('Recipe disabled');
+ check('admin can disable a recipe', /Recipe disabled/.test(disableNotice), disableNotice || await errorNotice());
 
  // Add/remove MCP and skill through the UI forms.
  await page.getByRole('button', {name: 'Add MCP server'}).click();
  await page.getByLabel('Server name').fill('qa-ui-mcp');
- await page.getByLabel('Command').fill('/bin/true');
+ await page.getByLabel('Command', {exact: true}).fill('/bin/true');
  await page.getByRole('button', {name: 'Add server'}).click();
- await waitForText('.settings-list', 'qa-ui-mcp');
- check('admin can add an MCP server from the UI', await page.locator('.settings-row').filter({hasText: 'qa-ui-mcp'}).count() === 1);
+ let mcpAdded = true;
+ try { await waitForText('.settings-list', 'qa-ui-mcp', 8000); } catch { mcpAdded = false; }
+ check('admin can add an MCP server from the UI', mcpAdded && await page.locator('.settings-row').filter({hasText: 'qa-ui-mcp'}).count() === 1);
  await page.locator('button[aria-label="Remove MCP server qa-ui-mcp"]').click();
- await page.waitForFunction(() => !Array.from(document.querySelectorAll('.settings-row')).some(row => row.textContent.includes('qa-ui-mcp')), null, {timeout: 10000});
- check('admin can remove the MCP server again', true);
+ let mcpRemoved = true;
+ try { await page.waitForFunction(() => !Array.from(document.querySelectorAll('.settings-row')).some(row => row.textContent.includes('qa-ui-mcp')), null, {timeout: 8000}); } catch { mcpRemoved = false; }
+ check('admin can remove the MCP server again', mcpRemoved, mcpRemoved ? '' : 'UI remove did not complete');
+ await api('/api/v1/agent/mcp/qa-ui-mcp', {method: 'DELETE'});
 
  await page.getByRole('button', {name: 'Add skill'}).click();
  await page.getByLabel('Name').fill('QA UI skill');
  await page.getByLabel('Description').fill('Temporary UI skill');
  await page.getByLabel('Skill content').fill('Check the trade show dates against the official website.');
  await page.locator('form.settings-editor').getByRole('button', {name: 'Add skill'}).click();
- await waitForText('.settings-list', 'QA UI skill');
- check('admin can add a skill from the UI', await page.locator('.settings-row').filter({hasText: 'QA UI skill'}).count() === 1);
+ let skillAdded = true;
+ try { await waitForText('.settings-list', 'QA UI skill', 8000); } catch { skillAdded = false; }
+ check('admin can add a skill from the UI', skillAdded && await page.locator('.settings-row').filter({hasText: 'QA UI skill'}).count() === 1);
  await page.locator('button[aria-label="Remove skill QA UI skill"]').click();
- await page.waitForFunction(() => !Array.from(document.querySelectorAll('.settings-row')).some(row => row.textContent.includes('QA UI skill')), null, {timeout: 10000});
- check('admin can remove the skill again', true);
+ let skillRemoved = true;
+ try { await page.waitForFunction(() => !Array.from(document.querySelectorAll('.settings-row')).some(row => row.textContent.includes('QA UI skill')), null, {timeout: 8000}); } catch { skillRemoved = false; }
+ check('admin can remove the skill again', skillRemoved, skillRemoved ? '' : 'UI remove did not complete');
+ const uiSkills = ((await api('/api/v1/agent/config')).json?.skills ?? []).filter(skill => String(skill.name).startsWith('QA UI skill'));
+ for (const skill of uiSkills) await api('/api/v1/agent/skills/' + skill.id, {method: 'DELETE'});
 
  await page.getByRole('button', {name: 'Reload raw JSON'}).click();
  await page.getByLabel('Raw MCP configuration JSON').waitFor({timeout: 10000});
  check('raw MCP JSON is readable by admin', /qa-acceptance-mcp/.test(await page.getByLabel('Raw MCP configuration JSON').inputValue()));
+ await page.getByRole('button', {name: 'Save raw JSON'}).click();
+ const rawNotice = await successNotice('MCP configuration saved');
+ check('admin can replace the raw MCP JSON (PUT)', /MCP configuration saved/.test(rawNotice), rawNotice || await errorNotice());
 
  // ================================================================ agent
  section('Agent: run history, transcript, admin composer');
  await gotoPage('Agent', 'Agent');
- equal('agent page shows the seeded history count', await page.locator('.agent-history .count').innerText(), '2');
+ try {
+  await page.waitForFunction(() => {
+   const node = document.querySelector('.agent-history .count');
+   return Boolean(node) && node.textContent.trim() === '2';
+  }, null, {timeout: 12000});
+ } catch { /* checked below */ }
+ equal('agent page shows the seeded history count', (await page.locator('.agent-history .count').innerText()).trim(), '2');
  check('admin sees the agent composer', await page.getByLabel('Message the agent').count() === 1 && await page.getByLabel('Message the agent').isEditable());
  check('admin sees the send control', await page.getByRole('button', {name: 'Send'}).count() === 1);
  check('agent empty state and suggestions are shown', await page.getByText('Start a conversation').count() >= 1 && await page.locator('.agent-suggestions button').count() >= 1);
@@ -676,7 +847,6 @@ try {
  check('agent history transcript opens read-only', await page.locator('.agent-transcript').isVisible());
  check('transcript renders the recorded messages', await page.locator('.agent-transcript').innerText().then(text => /Acceptance transcript fixture|Summarize|Which events/.test(text)));
  await page.locator('button[aria-label="Close transcript"]').click();
- await page.getByRole('heading', {name: 'Event calendar'}).count().catch(() => 0);
  await shot('27-agent-admin');
 
  // ============================================================= projects
@@ -684,8 +854,27 @@ try {
  await gotoPage('Projects', 'Research dashboard');
  check('research dashboard lists the demo projects', await page.locator('.projects-table tbody tr').count() >= 1, String(await page.locator('.projects-table tbody tr').count()));
  equal('research dashboard shows four statistics', await page.locator('.stats .stat').count(), 4);
- await page.locator('.projects-table .project-link').first().click();
- await page.getByRole('heading', {name: 'Insights & evidence'}).waitFor({timeout: 15000});
+ // The demo data can hold several projects; pick one that actually has accepted
+ // evidence and a saved report so the review/report pages are exercised.
+ const workspaceBundle = (await api('/api/v1/workspace')).json ?? {};
+ const projectList = workspaceBundle.projects ?? [];
+ const findingList = workspaceBundle.findings ?? [];
+ const reportList = workspaceBundle.reports ?? [];
+ const targetProject = projectList.find(project =>
+  reportList.some(report => report.project_id === project.id) &&
+  findingList.some(finding => finding.project_id === project.id && finding.decision === 'accepted'))
+  ?? projectList.find(project => findingList.some(finding => finding.project_id === project.id))
+  ?? projectList[0];
+ check('demo data contains a project with review evidence', Boolean(targetProject), targetProject?.title ?? 'none');
+ await page.locator('.projects-table tbody tr').filter({hasText: String(targetProject?.title ?? '').slice(0, 30)}).first().locator('.project-link').click();
+ await page.waitForFunction(() => {
+  const heading = document.querySelector('h1');
+  return Boolean(heading) && ['Insights & evidence', 'Research progress'].includes(heading.textContent.trim());
+ }, null, {timeout: 15000});
+ if ((await page.locator('h1').first().innerText()).trim() !== 'Insights & evidence') {
+  await page.locator('.flow-tabs button').filter({hasText: 'Insights & review'}).click();
+  await page.getByRole('heading', {name: 'Insights & evidence'}).waitFor({timeout: 15000});
+ }
  check('completed project opens the insights page', true);
  check('insights page shows the accepted/total counter', /\d+\s*\/\s*\d+\s*accepted/.test(await page.locator('.review-total').innerText()), await page.locator('.review-total').innerText());
  check('finding cards are rendered', await page.locator('.finding-card').count() >= 1);
@@ -695,16 +884,20 @@ try {
  await page.getByRole('heading', {name: 'Research progress'}).waitFor({timeout: 15000});
  check('research progress page still works', await page.locator('.progress-stats').isVisible());
  await page.locator('.flow-tabs button').filter({hasText: 'Comparison & report'}).click();
- await page.getByRole('heading', {name: 'Comparison and report'}).waitFor({timeout: 15000}).catch(async () => {
-  await page.getByRole('heading', {name: 'Comparison & report'}).waitFor({timeout: 15000});
- });
+ await page.getByRole('heading', {name: 'Comparison & report'}).waitFor({timeout: 15000});
  check('comparison and report page still works', true);
  const reportSelector = page.getByLabel('Select saved report version');
- await waitMinCount('#root option', 1).catch(() => {});
- await reportSelector.selectOption({index: 1});
- await page.locator('.report-document').waitFor({timeout: 15000});
- check('saved report version renders a document', await page.locator('.report-document h1').isVisible());
- check('report lists limitations', await page.locator('.report-document').innerText().then(text => /Only human-approved|limitation/i.test(text)));
+ const reportOptions = await reportSelector.locator('option').count();
+ check('saved report version option is listed', reportOptions > 1, String(reportOptions) + ' options');
+ if (reportOptions > 1) {
+  await reportSelector.selectOption({index: 1});
+  await page.locator('.report-document').waitFor({timeout: 15000});
+  check('saved report version renders a document', await page.locator('.report-document h1').isVisible());
+  check('report lists limitations', await page.locator('.report-document').innerText().then(text => /Only human-approved|limitation/i.test(text)));
+ } else {
+  check('saved report version renders a document', false, 'no saved report for the selected project');
+  check('report lists limitations', false, 'no saved report for the selected project');
+ }
  await shot('28-projects-report');
 
  // ================================================================ i18n
@@ -712,11 +905,9 @@ try {
  await gotoPage('Events', 'Event calendar');
  await page.getByRole('button', {name: '中文', exact: true}).click();
  await waitForText('nav', '任务');
- check('language switch updates navigation labels', ['展会', '任务', '来源', '项目', '设置'].every(label => {
-  return true;
- }).valueOf(), await page.locator('nav button').allInnerTexts().then(texts => texts.join('|')));
- check('Chinese navigation labels visible', (await page.locator('nav button').allInnerTexts()).join('|').includes('任务') && (await page.locator('nav button').allInnerTexts()).join('|').includes('来源'));
- equal('document language switches to zh', await page.evaluate(() => document.documentElement.lang), 'zh');
+ const zhNav = (await page.locator('nav button').allInnerTexts()).join('|');
+ check('language switch updates navigation labels', ['展会', '任务', '来源', '项目', '设置'].every(label => zhNav.includes(label)), zhNav.replace(/\n/g, ' '));
+ check('document language switches to Chinese', (await page.evaluate(() => document.documentElement.lang)).startsWith('zh'), await page.evaluate(() => document.documentElement.lang));
  check('Chinese document title is set', /市场情报/.test(await page.title()), await page.title());
  await page.getByRole('heading', {name: '展会日历'}).waitFor({timeout: 10000});
  check('Events page heading is localized', true);
@@ -725,12 +916,12 @@ try {
  check('Tasks page heading is localized', true);
  await shot('29-zh-tasks');
  await page.reload({waitUntil: 'domcontentloaded'});
- await page.getByRole('heading', {name: '任务队列'}).waitFor({timeout: 15000});
+ await page.getByRole('heading', {name: '展会日历'}).waitFor({timeout: 20000});
  check('Chinese choice persists after a reload', (await page.locator('nav button').allInnerTexts()).join('|').includes('任务'));
  await page.getByRole('button', {name: 'EN', exact: true}).click();
- await page.getByRole('heading', {name: 'Task queue'}).waitFor({timeout: 15000});
+ await page.getByRole('heading', {name: 'Event calendar'}).waitFor({timeout: 15000});
  check('switch back to English restores the English UI', (await page.locator('nav button').allInnerTexts()).join('|').includes('Tasks'));
- equal('document language returns to en', await page.evaluate(() => document.documentElement.lang), 'en');
+ check('document language returns to English', (await page.evaluate(() => document.documentElement.lang)).startsWith('en'), await page.evaluate(() => document.documentElement.lang));
 
  // ============================================================= viewer
  section('Role viewer: read-only across all pages');
@@ -739,7 +930,10 @@ try {
  await page.reload({waitUntil: 'domcontentloaded'});
  await page.getByRole('heading', {name: 'Event calendar'}).waitFor({timeout: 20000});
  await page.waitForFunction(() => !Array.from(document.querySelectorAll('button')).some(button => (button.textContent || '').includes('Discover events')), null, {timeout: 15000});
- await waitEvCount(3);
+ check('task queue drains before the viewer checks', await drainQueue());
+ const viewerCount = await currentDefaultCount();
+ await waitEvCount(viewerCount);
+ check('viewer default view matches the API event count', await evCount() === viewerCount, 'count=' + viewerCount);
  check('viewer does not see the Discover events action', await page.getByRole('button', {name: 'Discover events'}).count() === 0);
  check('viewer does not see the Add/queue write actions', await page.locator('.ev-heading-actions .primary').count() === 0);
  await openFirstEventCard();
@@ -753,7 +947,8 @@ try {
  await waitMinCount('.task-table tbody tr', 1);
  await page.waitForFunction(() => document.querySelectorAll('.task-table thead th').length === 7, null, {timeout: 15000});
  check('viewer does not see the task ACTIONS column', await page.locator('.task-table thead th').count() === 7, String(await page.locator('.task-table thead th').count()));
- check('viewer sees no cancel/retry buttons in task rows', await page.locator('.task-table tbody button').count() === 0);
+ check('viewer sees no cancel/retry buttons in task rows',
+  await page.locator('.task-table tbody button').filter({hasText: /^(Cancel|Retry)$/}).count() === 0);
 
  await gotoPage('Sources', 'Sources');
  await waitMinCount('.sources-table tbody tr', 20);
@@ -781,7 +976,13 @@ try {
  await waitForText('.agent-viewer-note', 'Viewers can read agent history only');
  check('viewer does not see the agent composer', await page.getByLabel('Message the agent').count() === 0);
  check('viewer sees the read-only agent note', /Viewers can read agent history only/.test(await page.locator('.agent-viewer-note').innerText()));
- equal('viewer still sees the seeded agent history', await page.locator('.agent-history .count').innerText(), '2');
+ try {
+  await page.waitForFunction(() => {
+   const node = document.querySelector('.agent-history .count');
+   return Boolean(node) && node.textContent.trim() === '2';
+  }, null, {timeout: 12000});
+ } catch { /* checked below */ }
+ equal('viewer still sees the seeded agent history', (await page.locator('.agent-history .count').innerText()).trim(), '2');
  await page.locator('.agent-session-list button').first().click();
  await page.locator('.agent-transcript').waitFor({timeout: 10000});
  check('viewer can open a read-only transcript', await page.locator('.agent-transcript').isVisible());
@@ -791,12 +992,13 @@ try {
  // =============================================================== user
  section('Role user: toggles and run allowed, management blocked');
  if (!(await forceRole('admin'))) check('restore admin before the user phase', false);
+ check('task queue drains before the user checks', await drainQueue());
  const toUser = await patchRole('user');
  check('switch workspace role to user through the API', toUser.status === 200, 'HTTP ' + toUser.status + ' · role=' + await roleNow());
  await page.reload({waitUntil: 'domcontentloaded'});
- await page.getByRole('heading', {name: 'Task queue'}).waitFor({timeout: 20000});
+ await page.getByRole('heading', {name: 'Event calendar'}).waitFor({timeout: 20000});
  await page.locator('nav button').filter({hasText: 'Sources'}).first().click();
- await page.getByRole('heading', {name: 'Sources'}).waitFor({timeout: 15000});
+ await page.getByRole('heading', {name: 'Sources', exact: true}).waitFor({timeout: 15000});
  await waitForText('.alert', 'You can enable, disable and run sources');
  check('user sees the limited-operations banner', /You can enable, disable and run sources/.test(await page.locator('.alert').first().innerText()));
  check('user cannot add sources', await page.getByRole('button', {name: 'Add source'}).count() === 0);
@@ -806,7 +1008,7 @@ try {
  check('user can toggle a source', await userToggle.isEnabled());
  const userWas = await userToggle.isChecked();
  await userToggle.click();
- await waitForText('[role="status"]', userWas ? 'Source disabled' : 'Source enabled');
+ await successNotice(userWas ? 'Source disabled' : 'Source enabled');
  check('user source toggle succeeds', await userToggle.isChecked() === !userWas);
  await userToggle.click();
  await page.waitForFunction(expected => {
@@ -836,6 +1038,7 @@ try {
  section('Restore admin role');
  check('admin role restored after the role matrix', await forceRole('admin'));
  await page.reload({waitUntil: 'domcontentloaded'});
+ await page.getByRole('heading', {name: 'Event calendar'}).waitFor({timeout: 20000});
  await page.locator('nav button').filter({hasText: 'Settings'}).first().click();
  await page.getByRole('heading', {name: 'Settings'}).waitFor({timeout: 15000});
  equal('settings role selector shows admin again', await page.getByLabel('Workspace role').inputValue(), 'admin');
@@ -858,7 +1061,7 @@ try {
   await page.locator('aside.sidebar.open').waitFor({timeout: 10000});
   if (item.label === 'Events') await shot('42-mobile-nav');
   await page.locator('aside.sidebar nav button').filter({hasText: item.label}).first().click();
-  await page.getByRole('heading', {name: item.heading}).waitFor({timeout: 15000});
+  await page.getByRole('heading', {name: item.heading, exact: true}).waitFor({timeout: 15000});
   await page.waitForTimeout(400);
   const overflow = await page.evaluate(() => ({
    document: document.documentElement.scrollWidth - window.innerWidth,
@@ -876,7 +1079,6 @@ try {
  check('mobile drawer closes on backdrop tap', true);
 
  // Mobile event detail stays usable.
- await page.locator('nav button').filter({hasText: 'Events'}).count().catch(() => 0);
  await page.goto(BASE, {waitUntil: 'domcontentloaded'});
  await page.getByRole('heading', {name: 'Event calendar'}).waitFor({timeout: 20000});
  await waitMinCount('.ev-card', 1);

@@ -20,6 +20,7 @@
 // Exit code 0 = every check passed, 1 = at least one FAIL.
 
 import {copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {createServer} from 'node:http';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -256,7 +257,10 @@ async function cleanupCreated(refs) {
  // Best effort: restore admin, cancel leftovers, remove records created by this run.
  await forceRole('admin');
  for (const id of refs.queueIds) {
-  await request('/api/v1/tasks/' + id + '/cancel', {method: 'POST', body: {}});
+  // Cancel only queued leftovers: cancelling a running Playwright render is a
+  // separate known defect (BUG-3) that crashes the API process.
+  const current = await request('/api/v1/tasks/' + id);
+  if (current.json?.state === 'queued') await request('/api/v1/tasks/' + id + '/cancel', {method: 'POST', body: {}});
  }
  if (refs.sourceId) {
   const removed = await request('/api/v1/sources/' + refs.sourceId, {method: 'DELETE'});
@@ -318,6 +322,19 @@ async function run() {
   check('workspace has at least one project', (workspace.json?.projects ?? []).length >= 1, String((workspace.json?.projects ?? []).length));
   check('workspace exposes sources/findings/audits/reports arrays',
    Array.isArray(workspace.json?.sources) && Array.isArray(workspace.json?.findings) && Array.isArray(workspace.json?.audits) && Array.isArray(workspace.json?.reports));
+  // The dev UI runs on a different origin than the API, so management
+  // DELETE/PUT calls need these methods advertised in the preflight response.
+  const preflight = await fetch(API + '/api/v1/sources/00000000-0000-4000-8000-000000000000', {
+   method: 'OPTIONS',
+   headers: {
+    Origin: 'http://127.0.0.1:5176',
+    'Access-Control-Request-Method': 'DELETE',
+    'Access-Control-Request-Headers': 'content-type',
+   },
+  }).catch(() => null);
+  const allowedMethods = String(preflight?.headers.get('access-control-allow-methods') || '');
+  check('CORS preflight advertises DELETE for the management UI', allowedMethods.includes('DELETE'), allowedMethods);
+  check('CORS preflight advertises PUT for the raw MCP editor', allowedMethods.includes('PUT'), allowedMethods);
   equal('unknown API route returns 404', (await request('/api/v1/acceptance-no-route')).status, 404);
   equal('invalid JSON body returns 400', (await request('/api/v1/events/discover', {method: 'POST', body: '{not json'})).status, 400);
 
@@ -386,9 +403,90 @@ async function run() {
    refs.queueIds.push(runC.json.task.id);
    const retryQueued = await request('/api/v1/tasks/' + runC.json.task.id + '/retry', {method: 'POST', body: {}});
    equal('retry on a non-failed task returns 409', retryQueued.status, 409);
-   await request('/api/v1/tasks/' + runC.json.task.id + '/cancel', {method: 'POST', body: {}});
+   const cState = (await request('/api/v1/tasks/' + runC.json.task.id)).json?.state;
+   if (cState === 'queued') await request('/api/v1/tasks/' + runC.json.task.id + '/cancel', {method: 'POST', body: {}});
   } else {
    check('retry on a non-failed task returns 409', false, 'could not create task C');
+  }
+
+  // ------------------- collector abort regression (BUG-3) -----------------
+  section('Collector abort regression (BUG-3: cancellation must not kill the API)');
+  // The single worker may still be collecting for the lifecycle tasks above;
+  // wait for the queue to drain so the JS-shell task really reaches running.
+  let drained = false;
+  const drainDeadline = Date.now() + 90000;
+  while (Date.now() < drainDeadline) {
+   const active = ((await request('/api/v1/tasks?limit=200')).json?.tasks ?? [])
+    .filter(task => task.state === 'queued' || task.state === 'running');
+   if (!active.length) { drained = true; break; }
+   await sleep(500);
+  }
+  check('task queue is idle before the abort regression', drained);
+  // The synchronous <script src="/slow.js"> keeps DOMContentLoaded pending for
+  // 2 s, so cancelling ~1 s after the task starts reliably happens while the
+  // Playwright fallback is running (and the HTTP response is already consumed).
+  const shellServer = createServer((req, res) => {
+   if (req.url === '/robots.txt') {
+    res.writeHead(200, {'Content-Type': 'text/plain'});
+    res.end('User-agent: *\nAllow: /\n');
+    return;
+   }
+   if (req.url === '/slow.js') {
+    setTimeout(() => {
+     if (!res.writableEnded) { res.writeHead(200, {'Content-Type': 'text/javascript'}); res.end('window.__ready = true;'); }
+    }, 2000);
+    return;
+   }
+   res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
+   res.end('<!doctype html><html><head><title>JS shell</title><script src="/slow.js"></script></head><body><div id="app">loading</div>'
+    + '<script>setTimeout(function(){document.getElementById("app").textContent="Rendered acceptance content ".repeat(40);}, 250);</script></body></html>');
+  });
+  await new Promise(resolve => shellServer.listen(0, '127.0.0.1', resolve));
+  const shellPort = shellServer.address().port;
+  try {
+   const shellSource = await request('/api/v1/sources', {
+    method: 'POST',
+    body: {url: 'http://127.0.0.1:' + shellPort + '/shell', title: 'QA JS shell page', type: 'site', region: 'cn', priority: 1, intervalSec: 3600},
+   });
+   check('create a local JS-shell source for the abort regression', shellSource.status === 201, 'HTTP ' + shellSource.status);
+   const shellId = shellSource.json?.id;
+   const shellRun = await request('/api/v1/sources/' + shellId + '/run', {method: 'POST', body: {}});
+   const shellTaskId = shellRun.json?.task?.id;
+   check('JS-shell source collection queues a task', shellRun.status === 202 && Boolean(shellTaskId), 'HTTP ' + shellRun.status);
+   let shellState = null;
+   for (let attempt = 0; attempt < 200; attempt += 1) {
+    shellState = (await request('/api/v1/tasks/' + shellTaskId)).json;
+    if (shellState && shellState.state === 'running') break;
+    if (shellState && ['succeeded', 'failed', 'cancelled'].includes(shellState.state)) break;
+    await sleep(50);
+   }
+   check('JS-shell collection reaches the running state', shellState?.state === 'running', shellState?.state ?? 'none');
+   if (shellState?.state === 'running') {
+    // Cancel while the Playwright fallback is executing: before BUG-3 this
+    // could crash the whole API process with an unhandled page.content rejection.
+    await sleep(1000);
+    const beforeCancel = (await request('/api/v1/tasks/' + shellTaskId)).json?.state;
+    const cancelRunning = await request('/api/v1/tasks/' + shellTaskId + '/cancel', {method: 'POST', body: {}});
+    check('cancel a running collection returns 200', cancelRunning.status === 200, 'HTTP ' + cancelRunning.status + ' · state before=' + beforeCancel);
+    check('running collection accepts the cancellation request',
+     beforeCancel === 'running' && (cancelRunning.json?.state === 'cancelled' || cancelRunning.json?.cancelRequested === true || ['cancelled', 'running'].includes(cancelRunning.json?.state)),
+     'state=' + String(cancelRunning.json?.state) + ' cancelRequested=' + String(cancelRunning.json?.cancelRequested));
+   } else {
+    check('cancel a running collection returns 200', false, 'task reached ' + String(shellState?.state) + ' before cancellation');
+    check('running collection accepts the cancellation request', false, 'task reached ' + String(shellState?.state) + ' before cancellation');
+   }
+   const terminal = await pollTask(shellTaskId, task => ['cancelled', 'succeeded', 'failed'].includes(task.state), 20000);
+   check('cancelled collection reaches a terminal state', ['cancelled', 'succeeded', 'failed'].includes(terminal?.state), terminal?.state ?? 'none');
+   await sleep(1000);
+   const healthA = await request('/health');
+   const healthB = await request('/health');
+   check('API stays alive after cancelling a running collection (health #1)', healthA.status === 200, 'HTTP ' + healthA.status);
+   check('API stays alive after cancelling a running collection (health #2)', healthB.status === 200, 'HTTP ' + healthB.status);
+   const leftover = (await request('/api/v1/tasks/' + shellTaskId)).json?.state;
+   if (leftover === 'queued') await request('/api/v1/tasks/' + shellTaskId + '/cancel', {method: 'POST', body: {}});
+   await request('/api/v1/sources/' + shellId, {method: 'DELETE'});
+  } finally {
+   shellServer.close();
   }
 
   // ------------------------------------------------------------------- events
@@ -516,6 +614,7 @@ async function run() {
   check('agent config exposes cli, mcpServers, ocr, skills, plugins',
    typeof agentConfig.json?.cli === 'object' && Array.isArray(agentConfig.json?.mcpServers) && typeof agentConfig.json?.ocr === 'object' && Array.isArray(agentConfig.json?.skills) && Array.isArray(agentConfig.json?.plugins));
   refs.mcpName = 'qa-acceptance-mcp';
+  await request('/api/v1/agent/mcp/' + refs.mcpName, {method: 'DELETE'});
   const addMcp = await request('/api/v1/agent/mcp', {method: 'POST', body: {name: refs.mcpName, transport: 'stdio', command: '/bin/true', args: []}});
   equal('admin POST MCP server returns 201', addMcp.status, 201);
   const rawMcp = await request('/api/v1/agent/mcp/raw');
@@ -523,6 +622,12 @@ async function run() {
   const mcpToggle = await request('/api/v1/agent/mcp/' + refs.mcpName, {method: 'PATCH', body: {enabled: false}});
   equal('admin PATCH MCP enabled returns 200', mcpToggle.status, 200);
   equal('MCP enabled patch applied', mcpToggle.json?.enabled, false);
+  // The settings UI replaces the whole agent/mcp.json with PUT; the API must
+  // parse the PUT body (BUG-4 regression).
+  const rawPut = await request('/api/v1/agent/mcp', {method: 'PUT', body: {mcpServers: rawMcp.json?.mcpServers ?? {}}});
+  equal('admin PUT raw MCP JSON returns 200', rawPut.status, 200);
+  check('raw MCP PUT keeps the server list', Boolean(rawPut.json?.mcpServers?.[refs.mcpName]), JSON.stringify(Object.keys(rawPut.json?.mcpServers ?? {})));
+  equal('PUT raw MCP with invalid JSON returns 400', (await request('/api/v1/agent/mcp', {method: 'PUT', body: '{not json'})).status, 400);
   // CLI and system role are T0-only: the web API must refuse them even for admin.
   equal('admin PATCH agent CLI settings returns 403', (await request('/api/v1/agent/settings', {method: 'PATCH', body: {cli: {enabled: false}}})).status, 403);
   equal('admin cannot promote itself to system (403)', (await patchRole('system')).status, 403);
@@ -579,7 +684,8 @@ async function run() {
   equal('user can run a source (202)', userRun.status, 202);
   if (userRun.json?.task?.id) {
    refs.queueIds.push(userRun.json.task.id);
-   await request('/api/v1/tasks/' + userRun.json.task.id + '/cancel', {method: 'POST', body: {}});
+   const state = (await request('/api/v1/tasks/' + userRun.json.task.id)).json?.state;
+   if (state === 'queued') await request('/api/v1/tasks/' + userRun.json.task.id + '/cancel', {method: 'POST', body: {}});
   }
 
   // ------------------------------------------------------------- role: viewer
@@ -602,6 +708,7 @@ async function run() {
   equal('viewer can read agent config', viewerConfig.status, 200);
   check('viewer agent config omits skill bodies', (viewerConfig.json?.skills ?? []).every(skill => skill.content === undefined), JSON.stringify((viewerConfig.json?.skills ?? []).map(skill => skill.name)));
   equal('viewer cannot read raw MCP JSON (403)', (await request('/api/v1/agent/mcp/raw')).status, 403);
+  equal('viewer cannot replace raw MCP JSON (403)', (await request('/api/v1/agent/mcp', {method: 'PUT', body: {mcpServers: {}}})).status, 403);
   equal('viewer can read agent sessions', (await request('/api/v1/agent/sessions?projectId=general')).status, 200);
   equal('viewer cannot start agent chat (403)', (await request('/api/v1/agent/chat', {method: 'POST', body: {message: 'hello'}})).status, 403);
   const viewerCancel = await request('/api/v1/tasks/' + taskB?.id + '/cancel', {method: 'POST', body: {}});
