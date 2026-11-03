@@ -414,3 +414,36 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 4. 测试 `tests/llm-settings.test.mjs`（配置存储/脱敏、admin/viewer 权限、capabilities、
    运行期取 key、custom provider 构建）；全量 239。验收：浏览器 193、API 179，
    0 console/page error。
+
+## 19. 迭代（2026-11-03）：官网搜索与本地搜索引擎
+
+用户发现某展会“官方网站”被写成论坛帖子（eechina/eeworld thread）。处理：
+
+1. **官网质量门**：新增 `isLikelyOfficialUrl`，拒绝论坛/媒体/目录/文章页（`/thread`、
+   `/bbs`、`/news`、`/article`、`/contact`、`/download` 等）及 UGC/媒体域名；只接受
+   站点根/落地页。搜索候选页在抓取匹配之外还要通过该检查，才可写入 `website`。
+2. **旧数据清理**：`scripts/clean-event-websites.mjs`（`npm run event:clean-websites`）离线
+   清理历史错误官网，并尝试从 `sources` 恢复可用官网；补全时也会自动清除/升级旧错误值。
+3. **可插拔搜索**：`server/web-search.mjs` + `WEB_SEARCH_PROVIDER=auto|deepseek|searxng|custom|none`，
+   支持本地部署 SearXNG（JSON API）、内部 JSON 搜索网关、DeepSeek 搜索工具；配置见
+   `docs/SEARCH_ENGINES.md`（含 Docker Compose 与 settings.yml 示例）。
+4. 测试 `tests/web-search.test.mjs`（7 个）：官网质量门、SearXNG/Custom 适配器、provider
+   选择、论坛结果拒绝、旧官网清理/恢复。
+
+## 20. 迭代（2026-11-03）：技能封装 + Agent 驱动研究
+
+用户要求把相关内容封装为 skills 供 Agent 调用，并要求研究过程实际调用 Agent。
+
+1. **内置技能包** `seed/skills/`：`domel-api`（本地 API curl 手册）、
+   `event-intelligence`（展会发现/官网规则/往届日期）、`source-collection`
+   （来源注册表/采集器/安全单页抓取）、`evidence-quality`（逐字引文/不编造）、
+   `agent-research`（研究流程与 `research-result.json` 契约）。新数据目录自动导入
+   `.local/agent/skills/`，设置页可见、Agent 会话加载。
+2. **Agent 驱动研究**：项目页新增「Agent 研究」（`run mode=agent`），队列任务
+   `project.agent-research`；Agent 用 skills + bash/curl 实际调用本地 API/抓公开页，
+   写 `research-result.json`；服务端校验公开 HTTPS 来源、项目竞品/focus、逐字引文后
+   入库为待审核 findings，不合格引文直接丢弃。
+3. **真实回归**：本机 demo 跑通一次 Agent 研究：3 个来源、9 条 findings、0 丢弃，
+   任务 ~2.5 分钟完成并进入审核状态。
+4. 测试 `tests/agent-research.test.mjs`（7 个）：prompt 契约、校验/丢弃、JSON 解析、
+   文件/文本回退、技能种子导入、API mode=agent 任务编排；全量 253 passed。

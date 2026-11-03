@@ -19,6 +19,9 @@
 | 展会地理层级：国家/省/市/区县从存储的城市表推断（`seed/geo-cn.json`），不用名称猜测 | ✅ |
 | 境外自办展识别：`中国（阿联酋）贸易博览会` 这类名称按括号国家归为境外展会（region=global/eu），不误判为中国 | ✅ |
 | AI 模型设置：设置页可填 DeepSeek Key/模型/Base URL（只写不读），也支持本地部署的 OpenAI 兼容模型（Ollama/vLLM/LM Studio 等） | ✅ |
+| 官网搜索：论坛/媒体/目录页不会被当成官网；支持 DeepSeek 搜索、**本地 SearXNG** 或内部 JSON 网关（`WEB_SEARCH_*`） | ✅ |
+| Agent 技能包：内置 5 个 SKILL（本地 API、展会情报、来源采集、证据规范、Agent 研究），新数据目录自动导入 | ✅ |
+| Agent 驱动研究：项目页「Agent 研究」让 Agent 实际调用技能/本地 API 收集网页，写 `research-result.json` 后校验入审核 | ✅ |
 | 展会页（首页）：列表/时间轴、筛选、详情、发现/补全/手动修正/导出 | ✅ |
 | 来源页、Settings 的 MCP/Skills/Plugins/Recipes 管理 | ✅ |
 | Agent 页：SSE 对话、工具卡片、可中断、运行历史；viewer 只读历史 | ✅ |
@@ -67,7 +70,7 @@ Docker/systemd 与内网部署见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 | 来源 | 注册表表格（URL/类型/地区/优先级/间隔/下次运行/状态）；开关、立即运行；admin 增删改、user 只能开关、viewer 只读 |
 | 项目 | 研究项目列表 → 进度/证据/审核/报告；保留只读助手 |
 | Agent | 项目/通用工作区对话、工具卡片、中途中止、运行历史（viewer 只读） |
-| 设置 | 角色三态、Agent 工具（T0 可写）、**AI 模型（DeepSeek / 本地 OpenAI 兼容）**、MCP（raw JSON/连接测试）、Skills、Plugins、Recipes 审批、MinerU OCR |
+| 设置 | 角色三态、Agent 工具（T0 可写）、**AI 模型（DeepSeek / 本地 OpenAI 兼容）**、MCP（raw JSON/连接测试）、Skills（含内置 5 个）、Plugins、Recipes 审批、MinerU OCR |
 
 中英双语即时切换；移动端 390×844 可用。
 
@@ -107,7 +110,7 @@ seed/geo-cn.json          国家/省/市/区县与展馆地理表（展会地点
 ## 测试与验收
 
 ```bash
-npm test                        # 239 个 Node 测试
+npm test                        # 253 个 Node 测试
 npm run build                   # tsc + vite
 
 # 独立验收（isolated data dir，脚本头注释有完整命令）：
@@ -140,7 +143,8 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 4. [docs/EVENT_LIBRARY.md](docs/EVENT_LIBRARY.md) — 来源注册表/采集器/展会资料库
 5. [docs/AGENT_RUNTIME.md](docs/AGENT_RUNTIME.md) — MCP/Skills/Plugins/角色/会话历史
 6. [docs/DOCUMENT_PARSING.md](docs/DOCUMENT_PARSING.md) — MinerU 配置与解析边界
-7. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 内网部署（systemd/Docker）；升级后可用
+7. [docs/SEARCH_ENGINES.md](docs/SEARCH_ENGINES.md) — 官网查找与本地搜索引擎（SearXNG）部署
+8. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 内网部署（systemd/Docker）；升级后可用
    `npm run event:backfill-geo` 补齐旧事件的国家/省/市/区县
 8. [docs/TEAM_CONTRACTS.md](docs/TEAM_CONTRACTS.md) — 并行开发接口契约（保留作参考）
 8. [docs/TEAM_CONTRACTS.md](docs/TEAM_CONTRACTS.md) — 并行开发接口契约（保留作参考）

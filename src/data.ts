@@ -50,7 +50,7 @@ export async function createProject(p:Omit<Project,'id'|'created_at'|'updated_at
  const now=new Date().toISOString();const row={...p,id:uid(),created_at:now,updated_at:now,status:'draft',stage:'Not started',errors:[]};
  const {data,error}=await supabase!.from('projects').insert(row).select().single();if(error)throw error;return data as Project;
 }
-export async function runResearch(id:string,demo:boolean,mode:'collect'|'research'|'extract'='collect'){
+export async function runResearch(id:string,demo:boolean,mode:'collect'|'research'|'extract'|'agent'='collect'){
  if(demo){const b=readDemo(),p=b.projects.find(p=>p.id===id)!;p.status='completed';p.stage='Demo workflow completed';p.errors=['Demo mode does not perform web retrieval or AI extraction. This new project has no findings. Connect the live backend to run research.'];saveDemo(b);return;}
  if(hostMode){await hostRequest('/api/v1/research-tasks/'+id+'/run','POST',{mode});return;}
  const {data,error}=await supabase!.functions.invoke('research',{body:{project_id:id,mode}});if(error){let detail='Research request failed. Check the deployed function and its allowed origin.';try{const body=await error.context?.json();if(body?.error)detail=body.error;}catch{}throw Error(detail);}if(data?.error)throw Error(data.error);

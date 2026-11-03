@@ -124,11 +124,40 @@ export function pageMatchesEvent(event, page = {}) {
  return tokens.some(token => haystack.includes(token));
 }
 
-const JUNK_HOSTS = [
+// Hosts that are never an event's official website: search engines, UGC/social
+// sites, industry media and B2B directories. A forum thread or a news article
+// must never be stored as "official website".
+const NON_OFFICIAL_HOSTS = [
  'baidu.com', 'zhihu.com', 'sohu.com', '163.com', 'sina.com.cn', 'weibo.com', 'weixin.qq.com',
  'bilibili.com', 'douyin.com', 'xiaohongshu.com', 'google.com', 'bing.com', 'wikipedia.org',
  'hc360.com', 'chinaiol.com', 'rhvcmag.com', 'ehvacr.com', 'alibaba.com', 'made-in-china.com',
+ 'eechina.com', 'eeworld.com.cn', 'csdn.net', '51cto.com', 'eefocus.com', 'elecfans.com',
+ 'showsbee.com', 'cantonfair.net', '11467.com', 'expo-china.com', 'chinadaily.com.cn',
+ 'sohu.com', 'toutiao.com', 'baijiahao.baidu.com', '36kr.com', 'huxiu.com',
 ];
+
+// Path shapes that denote articles, forum threads, news or downloads rather
+// than a site root/landing page.
+const NON_OFFICIAL_PATH = /(^|\/)(thread|threads|forum|forums|bbs|viewthread|question|questions|answer|answers|news|article|articles|blog|blogs|press|post|posts|wiki|download|downloads|detail|details|read|show|contact|about|privacy|login|register)(\/|$)/;
+const ARTICLE_FILENAME = /(^|[-_])thread[-_]?\d|\/thread-|viewthread|forum\.php|read\.php|\d+-1-\d+\.html?$/i;
+
+// True when a URL looks like an event's own site (root or landing page) and not
+// a forum/news/directory page. Used both when ranking search results and when
+// deciding whether a fetched page may become the stored official website.
+export function isLikelyOfficialUrl(value) {
+ const url = httpUrl(value);
+ if (!url) return false;
+ let parsed;
+ try { parsed = new URL(url); } catch { return false; }
+ const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+ if (NON_OFFICIAL_HOSTS.some(junk => host === junk || host.endsWith('.' + junk))) return false;
+ if (/(^|\.)(bbs|forum|blog|news|wiki)\./.test(host)) return false;
+ const path = parsed.pathname.toLowerCase();
+ if (NON_OFFICIAL_PATH.test(path)) return false;
+ const last = path.split('/').filter(Boolean).pop() ?? '';
+ if (ARTICLE_FILENAME.test(last)) return false;
+ return true;
+}
 
 // Rank web results for "this event's official website" and drop obvious
 // aggregators/document files. Search relevance is not evidence on its own: the
@@ -139,9 +168,9 @@ export function rankEventWebsiteResults(event, results, {limit = 3} = {}) {
  for (const item of Array.isArray(results) ? results : []) {
   const url = httpUrl(item?.url);
   if (!url) continue;
+  if (!isLikelyOfficialUrl(url)) continue;
   let host;
   try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { continue; }
-  if (JUNK_HOSTS.some(junk => host === junk || host.endsWith('.' + junk))) continue;
   if (/\.(pdf|docx?|pptx?|xlsx?|zip|rar)$/i.test(url)) continue;
   const title = String(item.title ?? '');
   const haystack = (host + ' ' + title + ' ' + url).toLowerCase();
@@ -177,6 +206,7 @@ export function createDeepSeekWebSearch({apiKey, getApiKey, baseUrl = 'https://a
  if (!apiKey && typeof getApiKey !== 'function') throw Error('DEEPSEEK_API_KEY is not configured');
  const endpoint = String(baseUrl).replace(/\/$/, '') + '/v1/tools/search';
  return {
+  provider: 'deepseek',
   async search({query, count = 8} = {}) {
    const activeKey = resolveKey();
    if (!activeKey) throw Error('DEEPSEEK_API_KEY is not configured');
@@ -232,6 +262,7 @@ export function createDeepSeekEventSearch({apiKey, getApiKey, model = 'deepseek-
  if (!apiKey && typeof getApiKey !== 'function') throw Error('DEEPSEEK_API_KEY is not configured');
  const endpoint = String(baseUrl).replace(/\/$/, '') + '/chat/completions';
  return {
+  provider: 'deepseek',
   async search({query, region = 'cn', limit = 30, signal} = {}) {
    const activeKey = resolveKey();
    if (!activeKey) throw Error('DEEPSEEK_API_KEY is not configured');

@@ -54,6 +54,10 @@ LOCAL_API_BIND=0.0.0.0 LOCAL_API_PORT=8788 SERVE_STATIC=1 npm run start
 
 **地理/官网数据**：展会国家/省/市/区县来自 `seed/geo-cn.json` 存储表（升级仓库后如需要可停服务运行 `npm run event:backfill-geo` 补齐旧事件）。展会补全会在没有官网时通过 DeepSeek Web Search 找候选并抓取核验。
 
+**官网查找/本地搜索**：展会补全通过搜索引擎找官网候选，支持 DeepSeek 搜索工具、本地
+SearXNG（`WEB_SEARCH_PROVIDER=searxng` + `SEARXNG_URL`）或内部 JSON 网关，部署方法与验证
+见 [SEARCH_ENGINES.md](SEARCH_ENGINES.md)。论坛/媒体/目录页不会被写成官网。
+
 **AI 密钥**：可写 `.env.host` 的 `DEEPSEEK_API_KEY`，也可由 admin 在 **设置 → AI 模型**
 里填写（只写不读、`.local/agent-config.json` 0600、优先于环境变量、保存后即时生效）。
 本地部署的模型（Ollama/vLLM/LM Studio 等）在 Base URL 填 OpenAI 兼容地址即可；

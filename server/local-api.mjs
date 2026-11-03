@@ -182,16 +182,21 @@ export function localApiServer({
    const run = path.match(/^\/api\/v1\/research-tasks\/([0-9a-f-]{36})\/run$/i);
    if (run && req.method === 'POST') {
     if (!allowed('business:write')) return deny('business:write');
-    if (!['collect', 'research', 'extract'].includes(body.mode)) return send(400, {error: 'Invalid research mode'});
+    if (!['collect', 'research', 'extract', 'agent'].includes(body.mode)) return send(400, {error: 'Invalid research mode'});
     const activeLlm = llmState();
     if (!activeLlm.key) return send(409, {error: 'No AI API key is configured. Add DEEPSEEK_API_KEY to .env.host or fill it in Settings → AI model.'});
     if (body.mode !== 'collect' && !extractionReady(env)) return send(409, {error: 'AI extraction is not configured on this demo host'});
+    if (body.mode === 'agent') {
+     if (!taskQueue()) return send(503, {error: 'Agent research requires the durable task queue'});
+     const runtime = await resolveAgentNow();
+     if (!runtime) return send(409, {error: 'Agent research requires a configured agent model (Settings → AI model)'});
+    }
     const job = await store.enqueue(run[1], body.mode);
     // With the durable queue the API only schedules the job: one worker runs
     // research, collection and event tasks in order. Without it (unit tests and
     // the old inline path) the demo keeps its in-process drain.
     if (taskQueue()) {
-     const kind = body.mode === 'extract' ? 'project.extract' : 'project.research';
+     const kind = body.mode === 'extract' ? 'project.extract' : body.mode === 'agent' ? 'project.agent-research' : 'project.research';
      const task = await taskQueue().create({kind, projectId: run[1], priority: 1, payload: {mode: body.mode, jobId: job.id}});
      return send(202, {...job, taskId: task.id, taskState: task.state});
     }
@@ -681,7 +686,7 @@ export function localApiServer({
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
  const env = process.env;
  const store = openLocalStore(env.LOCAL_DATA_FILE || '.local/domel.json');
- const agentStore = openAgentStore(env.AGENT_DATA_DIR || '.local');
+ const agentStore = openAgentStore(env.AGENT_DATA_DIR || '.local', {seedSkillsDir: env.AGENT_SKILLS_SEED || 'seed/skills'});
  const transcripts = openTranscriptStore({file: env.AGENT_TRANSCRIPT_FILE || '.local/agent/transcripts.json'});
 
  // AI configuration: Settings overrides .env.host; a custom base URL means a
@@ -719,11 +724,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
  }
  syncLlmEnv();
 
- // One queue for research, source collection and event jobs. The scheduler is
- // started together with the queue so due sources are picked up without a
- // separate worker process.
- const tasks = createTaskRunner({store, env, getLlm: resolveLlm});
-
  let modelCache = {signature: '', assistant: undefined, agentRuntime: undefined};
  async function resolveModels() {
   const llm = resolveLlm();
@@ -752,6 +752,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   return modelCache;
  }
+
+ // One queue for research, source collection and event jobs. The scheduler is
+ // started together with the queue so due sources are picked up without a
+ // separate worker process.
+ const tasks = createTaskRunner({
+  store,
+  env,
+  getLlm: resolveLlm,
+  getAgentRuntime: async () => (await resolveModels()).agentRuntime,
+ });
  const server = localApiServer({
   store,
   agentStore,

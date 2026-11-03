@@ -441,6 +441,8 @@ const zh:Record<string,string>={
  'Event calendar':'展会日历',
  'Discover events':'发现展会',
  'Task queue':'任务队列',
+ 'Agent research':'Agent 研究',
+ 'Let the agent collect and verify evidence with its skills, then review the findings it writes.':'让 Agent 用技能自主收集并核验证据，写出的发现进入人工审核。',
 };
 
 // Page modules register their Chinese labels from their own files, so parallel

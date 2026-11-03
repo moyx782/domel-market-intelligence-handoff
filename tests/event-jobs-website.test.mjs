@@ -92,7 +92,7 @@ test('a fetched page that does not match the event is not claimed as its website
   eventStore,
   collector,
   search: null,
-  webSearch: async () => [{url: 'https://portal.example/show', title: '展会网站'}],
+  webSearch: async () => [{url: 'https://portal.example/listing', title: '展会网站'}],
   geo: GEO,
   now: () => Date.parse('2026-11-03T12:00:00Z'),
  });
@@ -106,7 +106,7 @@ test('a fetched page that does not match the event is not claimed as its website
   });
   const updated = eventStore.get(event.id);
   assert.equal(updated.website, '');
-  assert.ok(updated.notes.join('\n').includes('官网候选（待人工确认）：https://portal.example/show'));
+  assert.ok(updated.notes.join('\n').includes('官网候选（待人工确认）：https://portal.example/listing'));
   assert.equal(result.collected, 1);
  } finally {
   rmSync(root, {recursive: true, force: true});

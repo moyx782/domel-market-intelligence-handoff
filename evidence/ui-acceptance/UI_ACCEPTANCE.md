@@ -225,7 +225,7 @@ Re-run results on the same frozen scripts (data isolated in `/tmp/lead-final2`):
 | API acceptance `scripts/acceptance-api.mjs` | **179 PASS / 0 FAIL** (province/district CSV + AI model masking/capabilities checks) |
 | Production HTTP (`SERVE_STATIC=1`, same-origin Origin) | `/`, `/assets/*.js|css`, SPA fallback, `/api/v1/workspace` 200; evil Origin 403 |
 | Production browser E2E | Event calendar renders, SPA fallback renders, 0 console/page errors |
-| `npm test` | **239/239** |
+| `npm test` | **253/253** |
 
 The final-iteration logs overwrite the same evidence files
 (`evidence/task-loop/UI_ACCEPTANCE_2026-11-03.log`, `API_ACCEPTANCE_2026-11-03.log`,
@@ -240,3 +240,15 @@ acceptance re-run covers: the section is present for admin and viewer, the activ
 environment-configured model is shown without exposing the key, the key input is never
 prefilled, and viewer controls are disabled. Counts above (193 browser / 179 API) are from
 that re-run; `tests/llm-settings.test.mjs` covers the server side.
+
+## Skills + agent-driven research (last backend/UI iteration)
+
+The data directory now seeds five skills (`domel-api`, `event-intelligence`,
+`source-collection`, `evidence-quality`, `agent-research`) into
+`.local/agent/skills/`; Settings → Skills lists them in this run. The project page
+gained the **Agent research** button (`run mode=agent`), which queues
+`project.agent-research`; a real demo run produced 3 sources / 9 verified findings
+(0 dropped) and moved the project to "Agent research ready for review". The
+isolated acceptance re-run above (193 browser / 179 API) confirms the existing
+flows still pass; the agent-research flow itself is covered by
+`tests/agent-research.test.mjs` and the live demo smoke run.

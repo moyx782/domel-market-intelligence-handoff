@@ -166,9 +166,9 @@ test('rankEventWebsiteResults drops aggregators and ranks official titles', () =
   {url: 'https://www.fluidmachineryexpo.com/en/news/2026', title: '行业新闻'},
   {url: 'https://www.fluidmachineryexpo.com/', title: 'China International Fluid Machinery Exhibition 官网'},
  ], {limit: 3});
- assert.equal(ranked.length, 2);
+ assert.equal(ranked.length, 1, 'news/article paths are not official-website candidates');
  assert.equal(ranked[0].url, 'https://www.fluidmachineryexpo.com/');
- assert.ok(!ranked.some(item => item.url.includes('baidu') || item.url.includes('zhihu')));
+ assert.ok(!ranked.some(item => item.url.includes('baidu') || item.url.includes('zhihu') || item.url.includes('/news/')));
 });
 
 test('createDeepSeekWebSearch calls the provider search tool and normalizes results', async () => {

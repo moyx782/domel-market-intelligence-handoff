@@ -16,8 +16,10 @@ import {hash as hashText, openDocumentStore} from './documents.mjs';
 import {openEventStore} from './event-store.mjs';
 import {createEventJobs} from './event-jobs.mjs';
 import {createScheduler} from './scheduler.mjs';
-import {buildDiscoveryQueries, createDeepSeekEventSearch, createDeepSeekWebSearch, createRegistryScanSearch, loadCompanyProfile} from './event-search.mjs';
+import {buildDiscoveryQueries, createDeepSeekEventSearch, createRegistryScanSearch, loadCompanyProfile} from './event-search.mjs';
+import {createWebSearch} from './web-search.mjs';
 import {openGeoIndex} from './geo.mjs';
+import {runAgentResearch} from './agent-research.mjs';
 
 const SOURCE_MIN_INTERVAL_MS = 30_000;
 
@@ -56,6 +58,7 @@ export function createTaskRunner({
  eventJobs: injectedEventJobs,
  researchRunner: injectedResearch,
  getLlm,
+ getAgentRuntime,
  now = () => Date.now(),
 }) {
  const registry = injectedRegistry ?? openSourceRegistry({
@@ -119,23 +122,16 @@ export function createTaskRunner({
  });
 
  // Enrichment uses a web search only to find candidate official pages; the
- // fetched page still has to match the event name before it is accepted. A
- // self-hosted model has no DeepSeek search tool, so no candidate search runs.
- const deepseekWebSearch = createDeepSeekWebSearch({
-  getApiKey: () => {
-   const llm = llmState();
-   return llm.provider === 'deepseek' ? llm.key : '';
-  },
-  baseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
- });
+ // fetched page still has to match the event name AND look like an event site
+ // before it is accepted. Search provider: DeepSeek's search tool, a locally
+ // deployed SearXNG, or an internal JSON gateway (see docs/SEARCH_ENGINES.md).
+ const configuredWebSearch = createWebSearch({env, getLlm});
  const externalWebSearch = typeof injectedWebSearch === 'function'
   ? injectedWebSearch
   : (injectedWebSearch && typeof injectedWebSearch.search === 'function' ? args => injectedWebSearch.search(args) : null);
- const webSearch = externalWebSearch ?? (async args => {
-  const llm = llmState();
-  if (llm.provider !== 'deepseek' || !llm.key) return [];
-  return deepseekWebSearch.search(args);
- });
+ const webSearch = externalWebSearch ?? (configuredWebSearch
+  ? args => configuredWebSearch.search(args)
+  : async () => []);
 
  const eventJobs = injectedEventJobs ?? createEventJobs({
   eventStore,
@@ -214,9 +210,62 @@ export function createTaskRunner({
   }
  }
 
+ // Agent-driven research: the Pi agent uses the shipped skills + the local API
+ // to collect pages, then writes research-result.json for validation/import.
+ async function runAgentResearchTask(ctx) {
+  const jobId = String(ctx.task.payload?.jobId ?? '');
+  const projectId = String(ctx.task.projectId ?? ctx.task.payload?.projectId ?? '');
+  if (!jobId || !projectId) throw permanent('Agent research task is missing its job or project id');
+  const project = await store.project(projectId);
+  if (!project) throw permanent('Project not accessible');
+  if (typeof getAgentRuntime !== 'function') throw permanent('Agent research requires the agent runtime');
+  const agentRuntime = await getAgentRuntime();
+  if (typeof agentRuntime !== 'function') throw permanent('Agent model is not configured');
+  let job;
+  try {
+   job = await store.startJob(jobId);
+  } catch (error) {
+   throw permanent(error instanceof Error ? error.message : 'Research job not found');
+  }
+  const workspaceRoot = env.AGENT_WORKSPACE_ROOT || '.local/workspaces';
+  const workspace = join(workspaceRoot, projectId.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  const apiBase = env.LOCAL_API_URL || 'http://127.0.0.1:' + (env.LOCAL_API_PORT || 8788);
+  ctx.update({progress: 'Agent is researching with skills'});
+  try {
+   const result = await runAgentResearch({
+    agentRuntime,
+    project,
+    apiBase,
+    workspace,
+    signal: ctx.signal,
+    env,
+    onEvent: event => {
+     if (event?.type === 'tool_start') void ctx.update({progress: 'Agent: ' + event.tool});
+    },
+   });
+   if (ctx.signal.aborted) {
+    await store.failJob(jobId, 'Cancelled by user', {force: true}).catch(() => {});
+    throw Error('Cancelled by user');
+   }
+   await store.completeJob(jobId, {
+    status: 'partial',
+    stage: result.findings > 0 ? 'Agent research ready for review' : 'Agent research finished without findings',
+    errors: result.errors,
+    sources: result.sources,
+    findings: result.findings,
+   }, result.savedSources);
+   ctx.update({progress: 'Agent research finished', result: {sources: result.sources, findings: result.findings, dropped: result.dropped}});
+   return result;
+  } catch (error) {
+   await store.failJob(jobId, error instanceof Error ? error.message : 'Agent research failed').catch(() => {});
+   throw error;
+  }
+ }
+
  const handlers = {
   'project.research': runQueuedResearch,
   'project.extract': runQueuedResearch,
+  'project.agent-research': runAgentResearchTask,
   'source.collect': collectSource,
   ...eventJobs,
  };

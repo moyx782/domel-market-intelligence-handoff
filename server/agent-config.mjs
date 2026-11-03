@@ -9,7 +9,7 @@
 //   .local/agent/extensions/<slug>/        Pi extensions (plugins)
 //   .local/agent-config.json               role, CLI, skills, plugins
 
-import {existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 
@@ -49,7 +49,7 @@ function normalizeServer(entry){
  return out;
 }
 
-export function openAgentStore(root){
+export function openAgentStore(root,{seedSkillsDir=null}={}){
  const dir=join(root,'agent');
  const skillsDir=join(dir,'skills');
  const extensionsDir=join(dir,'extensions');
@@ -71,6 +71,19 @@ export function openAgentStore(root){
  config.llm.apiKey=String(config.llm.apiKey||'');
  config.llm.model=String(config.llm.model||'');
  config.llm.baseUrl=String(config.llm.baseUrl||'');
+
+ // Shipped skills (seed/skills) are imported on a fresh data directory so the
+ // agent can use the local API / event library / collectors out of the box.
+ if(seedSkillsDir&&config.skills.length===0&&existsSync(seedSkillsDir)){
+  for(const entry of readdirSync(seedSkillsDir,{withFileTypes:true})){
+   if(!entry.isDirectory())continue;
+   const source=join(seedSkillsDir,entry.name);
+   if(!existsSync(join(source,'SKILL.md')))continue;
+   const target=join(skillsDir,entry.name);
+   if(existsSync(target))continue;
+   try{cpSync(source,target,{recursive:true});}catch{}
+  }
+ }
 
  for(const entry of readdirSync(skillsDir,{withFileTypes:true})){
   if(!entry.isDirectory())continue;

@@ -9,7 +9,7 @@
 // network.
 
 import {toDateOnly} from './event-store.mjs';
-import {pageMatchesEvent, rankEventWebsiteResults} from './event-search.mjs';
+import {isLikelyOfficialUrl, pageMatchesEvent, rankEventWebsiteResults} from './event-search.mjs';
 
 const EVENT_STATUS_RANK = {discovered: 0, enriched: 1, verified: 2, archived: 3};
 const CONFIDENCE_RANK = {low: 0, medium: 1, high: 2};
@@ -963,18 +963,29 @@ function candidateUrls(event) {
    fields.push('exhibitorListUrl');
   }
   // Search-result candidates only become the official website after a fetched
-  // page matched the event name. When the official site cannot be fetched at
-  // all, a strong search result is still shown as the website but flagged as
-  // unverified, so the operator can open it and correct it by hand.
+  // page matched the event name AND looks like an event site (not a forum
+  // thread, news article or directory page). When the official site cannot be
+  // fetched at all, a strong search result is still shown as the website but
+  // flagged as unverified, so the operator can open it and correct it by hand.
   let websiteFromSearch = '';
+  let rejectedWebsite = '';
   const existingWebsite = httpUrl(event.website) ?? '';
-  const matchedBest = matchedPages.slice().sort((left, right) => websitePreference(right) - websitePreference(left))[0] ?? '';
+  const existingWebsiteValid = Boolean(existingWebsite) && isLikelyOfficialUrl(existingWebsite);
+  const officialMatchedPages = matchedPages.filter(url => isLikelyOfficialUrl(url));
+  const matchedBest = officialMatchedPages.slice().sort((left, right) => websitePreference(right) - websitePreference(left))[0] ?? '';
   let chosenWebsite = matchedBest;
-  if (!chosenWebsite && discoveredCandidates.length && discoveredCandidates[0].score >= 3) {
+  if (!chosenWebsite && discoveredCandidates.length && discoveredCandidates[0].score >= 3
+   && isLikelyOfficialUrl(discoveredCandidates[0].url)) {
    chosenWebsite = discoveredCandidates[0].url;
    websiteFromSearch = chosenWebsite;
   }
-  if (chosenWebsite && (!existingWebsite
+  if (existingWebsite && !existingWebsiteValid) {
+   // Legacy bad value (usually a forum thread from earlier builds): replace it
+   // with a verified official page when one exists, otherwise clear it.
+   changes.website = chosenWebsite;
+   fields.push('website');
+   rejectedWebsite = existingWebsite;
+  } else if (chosenWebsite && (!existingWebsite
    || (sameHost(existingWebsite, chosenWebsite) && websitePreference(chosenWebsite) > websitePreference(existingWebsite)))) {
    changes.website = chosenWebsite;
    fields.push('website');
@@ -1025,13 +1036,19 @@ function candidateUrls(event) {
   if (needsValue(resolved('applicationDeadline'))) missing.push('未找到报名截止日期');
   if (needsValue(resolved('venue'))) missing.push('展馆待确认');
   if (needsValue(resolved('city'))) missing.push('城市待确认');
+  if (rejectedWebsite) {
+   missing.push('原官网链接是论坛/媒体页面，未作为官网：' + rejectedWebsite);
+  }
   if (websiteFromSearch) {
    missing.push('官网链接来自搜索候选，待人工核验：' + websiteFromSearch);
   }
   if (needsValue(resolved('website'))) {
    missing.push('未找到官网链接');
-   if (discoveredCandidates.length) {
-    missing.push('官网候选（待人工确认）：' + discoveredCandidates.slice(0, 2).map(item => item.url).join('、'));
+   const officialCandidates = discoveredCandidates.filter(item => isLikelyOfficialUrl(item.url));
+   if (officialCandidates.length) {
+    missing.push('官网候选（待人工确认）：' + officialCandidates.slice(0, 2).map(item => item.url).join('、'));
+   } else if (discoveredCandidates.length) {
+    missing.push('搜索候选只有论坛/媒体页面，未写入官网');
    }
   }
   if (collected === 0) missing.push('未能采集官网或来源页面，待人工补充');

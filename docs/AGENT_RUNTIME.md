@@ -154,3 +154,46 @@ The Agent page is `src/Agent.tsx`.
 - MCP connection failures only go to `agent/mcp.log`; the chat stream does not surface them.
 - MCP tools are exposed `direct`; codemode/tool-search exposure is not in the UI yet.
 - Transport security, login and storage encryption are out of scope for this repository.
+
+## Shipped skills (seed/skills)
+
+A fresh data directory auto-imports the five skills under `seed/skills/` into
+`.local/agent/skills/`; Settings → Skills lists them and the Agent loads them
+per session:
+
+| Skill | What it teaches the agent |
+|---|---|
+| `domel-api` | curl recipes for the local API (events, sources, tasks, capabilities) |
+| `event-intelligence` | discover → inspect → enrich workflow, official-website rules, previous-edition dates |
+| `source-collection` | source registry, collector behaviour/errors, safe single-page fetch |
+| `evidence-quality` | exact-quote rule, no invented numbers/dates, GIGO gaps, human review |
+| `agent-research` | the `research-result.json` contract and research procedure |
+
+They are instructions, not tools: the agent uses them with its `bash`/file
+tools. If a data directory already has skills, the seed is not overwritten; copy
+`seed/skills/*` into `.local/agent/skills/` manually for an existing deployment.
+
+## Agent-driven research
+
+Project page → **Agent research** (`POST /api/v1/research-tasks/:id/run` with
+`{"mode":"agent"}`) queues a `project.agent-research` task. The agent receives
+the project scope, the local API base URL, the workspace path and its skills; it
+must collect real public pages and write `research-result.json`:
+
+```json
+{"sources":[{"url":"https://...","title":"...","text":"readable page text"}],
+ "findings":[{"competitor":"...","field":"...","text":"...","quote":"exact quote",
+              "source_url":"https://...","source_title":"..."}]}
+```
+
+The server validates the file before importing: sources must pass the public
+HTTPS source policy, competitors must be in the project, fields must be in the
+project focus, and every quote must appear verbatim in the saved source text
+(whitespace-normalised). Invalid findings are dropped, the rest are stored as
+sources + findings with `decision=pending` for human review. The final answer
+JSON is accepted as a fallback when the model has no file tool.
+
+Requirements/limits: a configured agent model with tool calling; `bash` and file
+tools enabled in Agent tools (T0 defaults); 0–25 findings per run; if the agent
+produces no usable source the task fails instead of writing invented evidence.
+There is no automatic approval — findings still go through the review UI.
