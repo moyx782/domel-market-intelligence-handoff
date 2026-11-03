@@ -136,6 +136,7 @@ function EventCard({event, active, onSelect}: {event: MarketEvent; active: boole
    <span><MapPin size={13}/>{[event.city, event.country].filter(Boolean).join(', ') || t('Location to be confirmed')}</span>
    <span><Building2 size={13}/>{event.venue || t('Venue to be confirmed')}</span>
   </span>
+  {event.industries?.length > 0 && <span className="ev-card-tags">{event.industries.map(industry => <span key={industry}>{industry}</span>)}</span>}
   <span className="ev-card-foot">
    <span className="ev-completeness">
     <span className="ev-completeness-head"><span>{t('Data completeness')}</span><strong>{value}%</strong></span>

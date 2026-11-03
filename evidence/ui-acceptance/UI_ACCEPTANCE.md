@@ -221,11 +221,11 @@ Re-run results on the same frozen scripts (data isolated in `/tmp/lead-final2`):
 
 | Check | Result |
 |---|---|
-| Browser acceptance `scripts/ui-acceptance.mjs` | **193 PASS / 0 FAIL**, 0 console/page errors |
+| Browser acceptance `scripts/ui-acceptance.mjs` | **192 PASS / 0 FAIL**, 0 console/page errors |
 | API acceptance `scripts/acceptance-api.mjs` | **179 PASS / 0 FAIL** (province/district CSV + AI model masking/capabilities checks) |
 | Production HTTP (`SERVE_STATIC=1`, same-origin Origin) | `/`, `/assets/*.js|css`, SPA fallback, `/api/v1/workspace` 200; evil Origin 403 |
 | Production browser E2E | Event calendar renders, SPA fallback renders, 0 console/page errors |
-| `npm test` | **253/253** |
+| `npm test` | **255/255** |
 
 The final-iteration logs overwrite the same evidence files
 (`evidence/task-loop/UI_ACCEPTANCE_2026-11-03.log`, `API_ACCEPTANCE_2026-11-03.log`,
@@ -252,3 +252,11 @@ gained the **Agent research** button (`run mode=agent`), which queues
 isolated acceptance re-run above (193 browser / 179 API) confirms the existing
 flows still pass; the agent-research flow itself is covered by
 `tests/agent-research.test.mjs` and the live demo smoke run.
+
+## Frontend quality matrix
+
+`npm run test:frontend` adds a self-contained 168-check frontend matrix (6 pages × 2
+locales × 2 viewports, roles, backend error/empty states, keyboard/skip link/dialog,
+language switch, accessible structure, document titles) with screenshots and
+`evidence/frontend-quality/REPORT.md`. It complements, rather than replaces, the
+browser acceptance above. See `docs/FRONTEND_QUALITY.md`.

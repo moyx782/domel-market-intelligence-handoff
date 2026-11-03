@@ -56,6 +56,8 @@
 .ev-card:hover:not(:disabled) { filter: none; border-color: #b9d3c1; box-shadow: 0 3px 14px #17382312; }
 .ev-card.active { border-color: #6aa585; box-shadow: 0 0 0 2px #cfe6d8; }
 .ev-card:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.ev-card-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+.ev-card-tags span{font-size:9px;background:#f0f3f1;color:#65796d;padding:3px 5px;border:1px solid #e3e9e5;border-radius:3px}
 
 .ev-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .ev-card-date { display: inline-flex; align-items: baseline; gap: 4px; font-size: 11px; font-weight: 700; color: var(--dark); }

@@ -916,7 +916,7 @@ try {
  const zhNav = (await page.locator('nav button').allInnerTexts()).join('|');
  check('language switch updates navigation labels', ['展会', '任务', '来源', '项目', '设置'].every(label => zhNav.includes(label)), zhNav.replace(/\n/g, ' '));
  check('document language switches to Chinese', (await page.evaluate(() => document.documentElement.lang)).startsWith('zh'), await page.evaluate(() => document.documentElement.lang));
- check('Chinese document title is set', /市场情报/.test(await page.title()), await page.title());
+ check('Chinese document title is set', /展会日历|市场情报/.test(await page.title()), await page.title());
  await page.getByRole('heading', {name: '展会日历'}).waitFor({timeout: 10000});
  check('Events page heading is localized', true);
  await page.locator('nav button').filter({hasText: '任务'}).first().click();

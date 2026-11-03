@@ -21,7 +21,9 @@
     "agent:admin": "node scripts/agent-admin.mjs",
     "test:api": "node scripts/acceptance-api.mjs",
     "event:backfill-geo": "node scripts/backfill-event-geo.mjs",
-    "event:clean-websites": "node scripts/clean-event-websites.mjs"
+    "event:clean-websites": "node scripts/clean-event-websites.mjs",
+    "test:frontend": "node scripts/run-frontend-quality.mjs",
+    "test:frontend:raw": "node scripts/frontend-quality.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.5.0",

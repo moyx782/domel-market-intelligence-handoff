@@ -22,6 +22,7 @@
 | 官网搜索：论坛/媒体/目录页不会被当成官网；支持 DeepSeek 搜索、**本地 SearXNG** 或内部 JSON 网关（`WEB_SEARCH_*`） | ✅ |
 | Agent 技能包：内置 5 个 SKILL（本地 API、展会情报、来源采集、证据规范、Agent 研究），新数据目录自动导入 | ✅ |
 | Agent 驱动研究：项目页「Agent 研究」让 Agent 实际调用技能/本地 API 收集网页，写 `research-result.json` 后校验入审核 | ✅ |
+| 前端自动化质量矩阵：6 页 × 2 语言 × 2 视口 + 角色/异常/空状态/键盘/可访问性，共 168 项断言，一条命令 | ✅ |
 | 展会页（首页）：列表/时间轴、筛选、详情、发现/补全/手动修正/导出 | ✅ |
 | 来源页、Settings 的 MCP/Skills/Plugins/Recipes 管理 | ✅ |
 | Agent 页：SSE 对话、工具卡片、可中断、运行历史；viewer 只读历史 | ✅ |
@@ -110,7 +111,7 @@ seed/geo-cn.json          国家/省/市/区县与展馆地理表（展会地点
 ## 测试与验收
 
 ```bash
-npm test                        # 253 个 Node 测试
+npm test                        # 255 个 Node 测试
 npm run build                   # tsc + vite
 
 # 独立验收（isolated data dir，脚本头注释有完整命令）：
@@ -126,7 +127,7 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 
 验收结果（2026-11-03，独立验收环境）：
 
-- 浏览器：**193 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
+- 浏览器：**192 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
   + 390×844 移动端。清单与截图：`evidence/ui-acceptance/`。
 - API：**179 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式
   契约）。日志：`evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`。
@@ -144,7 +145,8 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 5. [docs/AGENT_RUNTIME.md](docs/AGENT_RUNTIME.md) — MCP/Skills/Plugins/角色/会话历史
 6. [docs/DOCUMENT_PARSING.md](docs/DOCUMENT_PARSING.md) — MinerU 配置与解析边界
 7. [docs/SEARCH_ENGINES.md](docs/SEARCH_ENGINES.md) — 官网查找与本地搜索引擎（SearXNG）部署
-8. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 内网部署（systemd/Docker）；升级后可用
+8. [docs/FRONTEND_QUALITY.md](docs/FRONTEND_QUALITY.md) — 前端自动化测试矩阵（`npm run test:frontend`）
+9. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 内网部署（systemd/Docker）；升级后可用
    `npm run event:backfill-geo` 补齐旧事件的国家/省/市/区县
 8. [docs/TEAM_CONTRACTS.md](docs/TEAM_CONTRACTS.md) — 并行开发接口契约（保留作参考）
 8. [docs/TEAM_CONTRACTS.md](docs/TEAM_CONTRACTS.md) — 并行开发接口契约（保留作参考）

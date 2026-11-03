@@ -447,3 +447,20 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
    任务 ~2.5 分钟完成并进入审核状态。
 4. 测试 `tests/agent-research.test.mjs`（7 个）：prompt 契约、校验/丢弃、JSON 解析、
    文件/文本回退、技能种子导入、API mode=agent 任务编排；全量 253 passed。
+
+## 21. 迭代（2026-11-04）：前端自动化质量矩阵 + 人类体验改进
+
+1. **一条命令自动化**：`npm run test:frontend`（`scripts/run-frontend-quality.mjs`）自动准备
+   隔离数据、启动本地 API/Vite、运行 Playwright 质量矩阵、清理；产出
+   `evidence/frontend-quality/REPORT.md` + 29 张截图。
+2. **覆盖面**：6 页面 × 2 语言 × 2 视口 = 24 个内容场景；admin/user/viewer 角色；
+   workspace 500 / 空 workspace / 空事件库；键盘 skip link、dialog 焦点/Escape/返回；
+   语言切换；每页 `document.title`、`html lang`、header/nav/main 地标、唯一 h1、标题层级、
+   可交互元素可访问名称、图片 alt、重复 id、移动端横向溢出、0 console/page error。
+3. **静态 i18n 测试**：`tests/i18n-coverage.test.mjs` 扫描 `t('...')` 字面量，确保中文翻译
+   存在且非空（`npm test` 自动执行）。
+4. **测试驱动的体验修复**：按页 document.title；skip link + main 焦点；dialog 焦点陷阱/
+   Escape/焦点返回；加载失败 Retry；全局 ErrorBoundary；nav `aria-current`；移动菜单
+   `aria-expanded/controls`；viewer 只读说明；`<html lang>` 与语言同步。
+5. **结果**：前端矩阵 **168/168 PASS / 0 warnings，~43s**；全量 `npm test` **255/255**；
+   CI 工作流 `.github/workflows/frontend-quality.yml`（本地未跑 GitHub Runner）。

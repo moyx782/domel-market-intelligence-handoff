@@ -480,7 +480,6 @@ export function I18nProvider({children}:{children:ReactNode}){
  };
  useEffect(()=>{
   document.documentElement.lang=locale(lang);
-  document.title=lang==='zh'?'Domel · 市场情报':'Domel · Market Intelligence';
  },[lang]);
  const value=useMemo(()=>({
   lang,

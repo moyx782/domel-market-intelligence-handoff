@@ -345,4 +345,9 @@ registerMessages({
  'DeepSeek official': 'DeepSeek 官方',
  'Custom / local OpenAI-compatible': '自定义 / 本地 OpenAI 兼容',
  'Clear key': '清除密钥',
+
+ // Frontend quality / recovery
+ 'Skip to main content': '跳到主要内容',
+ 'Your role can read this research but cannot run it.': '你的角色可以查看该研究，但不能运行它。',
+ 'Workspace failed to load. Check the local API and try again.': '工作区加载失败，请检查本地 API 后重试。',
 });

@@ -1,3 +1,12 @@
 @media (prefers-reduced-motion:reduce){.spin{animation:none}}
 .small,.stat small,.mini-steps p,.panel-heading p,.stat>div,.eyebrow{color:#64746a}
 .login-story .eyebrow{color:#a9c9b5}
+/* Keyboard skip link and crash recovery (frontend quality iteration). */
+.skip-link{position:absolute;left:-9999px;top:0;z-index:100;background:#003f39;color:#fff;padding:10px 14px;border-radius:0 0 6px 0;font-size:12px;font-weight:600}
+.skip-link:focus{left:0;outline:3px solid #65b6a5;outline-offset:2px}
+#main-content:focus{outline:none}
+.crash-screen{max-width:720px;margin:12vh auto;padding:32px;background:#fff;border:1px solid var(--line);border-radius:10px}
+.crash-screen h1{font-size:30px}
+.crash-screen details{margin-top:20px}
+.crash-screen pre{max-height:320px;overflow:auto;background:#f6f8f6;padding:14px;border-radius:6px;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:650px){.crash-screen{margin:8vh 18px;padding:24px}}

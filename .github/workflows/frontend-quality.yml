@@ -1,0 +1,30 @@
+name: frontend-quality
+on:
+  push:
+    branches: [feature/task-loop-handoff, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  frontend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - id: chrome
+        uses: browser-actions/setup-chrome@v1
+      - name: Frontend quality matrix (one command, isolated data)
+        run: npm run test:frontend
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+      - name: Upload frontend evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-quality
+          path: evidence/frontend-quality
