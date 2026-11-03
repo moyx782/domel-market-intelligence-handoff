@@ -164,4 +164,5 @@ registerMessages({
  'Source disabled.':'来源已停用。',
  'Source run queued. Track it on the Tasks page.':'已排队运行该来源，可在任务页查看进度。',
  'View details':'查看详情',
+ 'Hide details':'收起详情',
 });

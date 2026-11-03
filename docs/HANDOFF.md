@@ -159,7 +159,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 | 只读助手 SSE | 真实模型 0.7s 返回；项目问题会调用 `list_findings` 并引用 Nidec |
 | Agent + MCP | 配置 stdio mock server 后，真实模型调用 `mcp__mock__echo` 得到 `echo:hello from mcp` |
 | Agent + 历史 | 真实 DeepSeek 对话一次，`agent/transcripts.json` 记录 user/assistant/toolCalls；`/api/v1/agent/sessions` 可读 |
-| 浏览器验收 | **194 项 PASS / 0 FAIL**，0 console/page error；六页 + 角色三态 + 中英 + 390×844 移动端；展会详情含国家/省/市/区县与可点击官网/来源 URL（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
+| 浏览器验收 | **197 项 PASS / 0 FAIL**，0 console/page error；六页 + 角色三态 + 中英 + 390×844 移动端；展会详情含国家/省/市/区县与可点击官网/来源 URL（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
 | API 验收 | **179 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式契约）（见 `evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`） |
 | 测试/构建 | `npm test` 255/255；`npm run build` 通过 |
 | 生产模式 | 带同源 Origin：`/health` 200、`/` 构建产物、`/assets/*.js|css` 200、SPA 回退、`/api/v1/workspace` 200；`evil.test` Origin 访问 API 403（见 `evidence/task-loop/PRODUCTION_CHECK_2026-11-03.md`） |

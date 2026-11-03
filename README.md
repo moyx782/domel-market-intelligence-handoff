@@ -127,7 +127,7 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 
 验收结果（2026-11-03，独立验收环境）：
 
-- 浏览器：**194 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
+- 浏览器：**197 项 PASS / 0 FAIL**，0 console error / 0 pageerror；六页 + 角色三态 + 中英
   + 390×844 移动端。清单与截图：`evidence/ui-acceptance/`。
 - API：**179 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式
   契约）。日志：`evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`。

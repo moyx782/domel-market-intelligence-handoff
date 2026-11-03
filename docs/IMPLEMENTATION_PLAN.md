@@ -465,13 +465,15 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 5. **结果**：前端矩阵 **168/168 PASS / 0 warnings，~43s**；全量 `npm test` **255/255**；
    CI 工作流 `.github/workflows/frontend-quality.yml`（本地未跑 GitHub Runner）。
 
-## 22. 迭代（2026-11-04）：任务详情可发现性
+## 22. 迭代（2026-11-04）：任务详情改为内联折叠列表
 
 用户反馈“任务现在不可以查看详情吗”。详情功能本身存在，但长列表（demo 151 条）中详情面板
-渲染在表格底部，点击后视口不变，移动端尤其像没有响应。修复：
+渲染在表格底部，点击后视口不变，移动端尤其像没有响应。按用户要求改为折叠列表：
 
-1. 行尾始终显示 **查看详情** 按钮（viewer 也可用；Cancel/Retry 仍仅 canWrite）。
-2. 选中任务后自动 `scrollIntoView` 并把焦点移到详情面板；关闭按钮回到列表。
-3. 详情面板补充 `aria-label` 与 `tabIndex=-1`，便于键盘/读屏定位。
-4. 验收新增「View details 按钮可见」「详情滚动进视口」「viewer 只读详情列」检查；
-   浏览器验收 194/194，全部 0 console/page error。
+1. 选中任务后详情作为 **task-detail-row** 内联展开在该任务行正下方，再次点击行或
+   「收起详情」/关闭按钮收起；一次只展开一条。
+2. 行尾始终显示 **查看详情** 按钮（展开时变为收起详情；viewer 也可用，Cancel/Retry
+   仍仅 canWrite）。
+3. 移除滚动到页面底部的旧行为，长列表不会整页跳动；详情面板保留 aria-label。
+4. 验收新增「详情内联展开在选中行下」「再次点击收起」「View details 重新展开」
+   「viewer 可内联只读展开」；浏览器验收 197/197，0 console/page error。
