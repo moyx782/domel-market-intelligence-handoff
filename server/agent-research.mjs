@@ -49,6 +49,8 @@ Workspace: ${workspace}
 Available skills: domel-api, event-intelligence, source-collection, evidence-quality, agent-research.
 Read the relevant skills before acting.
 
+${project.competitors?.length===1 && project.competitors[0]==='Research subject' && project.market==='Defined in research brief' ? 'This is a free-form research brief. Follow the user direction and requirements in question. The stored quarter is creation metadata, NOT a research date restriction. Research subject and Research findings are output grouping labels, not actual companies or scope restrictions. Put real company/topic names in finding text. Do not invent missing geography, companies or dates.' : ''}
+
 Task:
 1. Find and read public evidence for this project (trade shows, competitor activities, products, dates).
    Use the local API (events, sources, tasks) and, where needed, fetch a public page yourself with

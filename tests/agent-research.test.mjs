@@ -1,3 +1,4 @@
+import {agentBriefProject} from '../src/agent-brief.mjs';
 // Agent-driven research: skills are seeded into the agent workspace, and the
 // research mode hands the agent a task that must produce verified evidence.
 import test from 'node:test';
@@ -128,7 +129,7 @@ test('running a project with mode=agent schedules project.agent-research', async
  try {
   const created = await (await fetch(ctx.url + '/api/v1/research-tasks', {
    method: 'POST', headers: {'Content-Type': 'application/json'},
-   body: JSON.stringify({title: 'Agent research', question: 'Who?', segment: 'HVAC', market: 'China', quarter: '2026-Q4', competitors: ['Nidec'], focus: ['EC motors'], source_urls: []}),
+   body: JSON.stringify(agentBriefProject('HVAC exhibitions in China','Find 2027 dates and official evidence.')),
   })).json();
   const response = await fetch(ctx.url + '/api/v1/research-tasks/' + created.id + '/run', {
    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: 'agent'}),
