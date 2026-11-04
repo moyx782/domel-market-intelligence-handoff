@@ -513,4 +513,5 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 4. **状态/UI**：`/api/v1/ocr/status` 返回 `mineru.tokenSet/modelVersion/baseUrl`
    （永不回 token）；设置页显示“MinerU token 已配置，解析使用 vlm”。
 5. **测试**：`tests/mineru.test.mjs` 用假 MinerU 服务验证 token 优先级（UI token 覆盖 env）、
-   上传/轮询/zip Markdown 解析、状态接口不泄露 token；全量 270/270。
+   上传/轮询/zip Markdown 解析、状态接口不泄露 token；`npm run test:mineru`
+   用前端真实 token 解析扫描 PDF（本机 PASS：provider=mineru-vlm，47 字符）；全量 270/270。

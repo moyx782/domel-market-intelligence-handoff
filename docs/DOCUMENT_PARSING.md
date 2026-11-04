@@ -99,10 +99,25 @@ OCR 文本不塞进事件 JSON，而是：
 
 ```bash
 npm run test:ocr        # 真实视觉 OCR：生成中英文图片 + 扫描 PDF，断言识别文字（消耗少量 token）
+npm run test:mineru     # 测试【当前生效】的 MinerU 配置：读取前端设置页 token，
+                        # 真实上传扫描 PDF → vlm 解析 → 打印 provider/字符数/文本预览；
+                        # token 不会被打印，结果写 evidence/ocr/MINERU_SMOKE_<date>.log
 npm test                # OCR 单测 / 材料 schema / Agent 报告校验 / collector OCR 分支
 ```
 
-证据：`evidence/ocr/OCR_SMOKE_<date>.log` 与 fixtures。
+### 如何确认 Token 有效
+
+1. `curl -s http://localhost:8788/api/v1/ocr/status`：看
+   `mineru.configured=true`、`mineru.tokenSet=true`、`mineru.modelVersion=vlm`；
+   **接口不会返回 token 内容**。
+2. `npm run test:mineru`：用前端保存的 token 真实解析扫描 PDF，成功输出
+   `provider=mineru-vlm`；失败会输出 MinerU 返回的错误（如 token 失效 A0202）。
+3. 设置页 → Document parsing 看到「MinerU token 已配置」；token 只在服务端
+   `.local/agent-config.json`（0600）保存，UI/API/日志都不回显。
+4. 端到端：事件详情 → 文档「使用 OCR 解析」→ 任务页看任务状态 → 事件详情
+   「OCR 材料清单 / Agent 材料报告」。
+
+证据：`evidence/ocr/OCR_SMOKE_<date>.log`、`MINERU_SMOKE_<date>.log` 与 fixtures。
 
 ## 8. 安全与成本
 
