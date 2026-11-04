@@ -66,6 +66,7 @@ export function createOcr({env = process.env, getLlm, getMineru, fetchImpl = fet
  const tools = {
   pdftotext: binaryExists('pdftotext'),
   pdftoppm: binaryExists('pdftoppm'),
+  pdfimages: binaryExists('pdfimages'),
  };
  const maxDocumentPages = Math.max(1, Math.min(20, Number(maxPages) || 5));
 
@@ -104,6 +105,68 @@ export function createOcr({env = process.env, getLlm, getMineru, fetchImpl = fet
   return cleanText(text);
  }
 
+ // A text-layer PDF can still contain screenshots of exhibitor lists or hall
+// maps. Inspect embedded image dimensions before deciding whether the token
+// (MinerU vlm) or vision OCR should also read the images.
+ async function pdfImageInfo(pdfPath) {
+  if (!tools.pdfimages) return {count: 0, significant: 0};
+  try {
+   const {stdout} = await run('pdfimages', ['-list', pdfPath], {maxBuffer: 4 * 1024 * 1024, timeout: timeoutMs});
+   let count = 0;
+   let significant = 0;
+   for (const line of String(stdout).split('\n')) {
+    const match = /^\s*(\d+)\s+\d+\s+\w+\s+(\d+)\s+(\d+)\s/.exec(line);
+    if (!match) continue;
+    const width = Number(match[2]);
+    const height = Number(match[3]);
+    if (!width || !height) continue;
+    count += 1;
+    // logos/bullets are small; content screenshots/maps/lists are large
+    if (width * height >= 200_000 || (width >= 400 && height >= 250)) significant += 1;
+   }
+   return {count, significant};
+  } catch {
+   return {count: 0, significant: 0};
+  }
+ }
+
+ function pngSize(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null;
+  if (buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4e || buffer[3] !== 0x47) return null;
+  return {width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20)};
+ }
+
+ async function ocrPdfEmbeddedImages(pdfPath, dir, {maxImages = Math.max(1, Number(env.OCR_MAX_PDF_IMAGES) || 3)} = {}) {
+  if (!tools.pdfimages || !vision.configured) return [];
+  const prefix = join(dir, 'img');
+  try {
+   await run('pdfimages', ['-png', '-p', '-f', '1', '-l', String(maxDocumentPages), pdfPath, prefix], {maxBuffer: 1024 * 1024, timeout: Math.max(timeoutMs, 60000)});
+  } catch {
+   return [];
+  }
+  const files = readdirSync(dir).filter(name => /^img-\d+-\d+\.png$/i.test(name)).sort();
+  const selected = [];
+  for (const name of files) {
+   const buffer = readFileSync(join(dir, name));
+   const size = pngSize(buffer);
+   if (!size) continue;
+   if (!(size.width * size.height >= 200_000 || (size.width >= 400 && size.height >= 250))) continue;
+   selected.push({name, buffer, size});
+   if (selected.length >= maxImages) break;
+  }
+  const results = [];
+  for (const image of selected) {
+   try {
+    const text = await recognizeImage(image.buffer, {mime: 'image/png'});
+    if (text) {
+     const page = /^img-(\d+)-/.exec(image.name)?.[1] || '?';
+     results.push({page, width: image.size.width, height: image.size.height, text});
+    }
+   } catch { /* one bad image should not fail the text layer */ }
+  }
+  return results;
+ }
+
  async function extractPdf(buffer) {
   const data = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   if (!tools.pdftotext) throw Error('pdftotext is not installed; cannot read PDF documents');
@@ -116,10 +179,27 @@ export function createOcr({env = process.env, getLlm, getMineru, fetchImpl = fet
     const {stdout} = await run('pdftotext', ['-layout', '-enc', 'UTF-8', pdfPath, '-'], {maxBuffer: 8 * 1024 * 1024, timeout: timeoutMs});
     text = cleanText(stdout);
    } catch { /* a scanned PDF can fail or return no text */ }
-   if (text.length >= 200) {
-    return {text, provider: 'pdftotext', pages: null, method: 'text-layer'};
-   }
+   const imageInfo = await pdfImageInfo(pdfPath);
    const mineru = mineruState();
+   if (text.length >= 20) {
+    // Text layer exists, but large embedded images may contain exhibitor lists
+    // or hall maps. Prefer the token/vlm route for those documents; otherwise
+    // append vision OCR of the significant images to the text-layer result.
+    if (imageInfo.significant > 0 && mineru.configured) {
+     try {
+      const parsed = await parseMineru({buffer: data, mime: 'application/pdf', config: mineru, fetchImpl, timeoutMs: Math.max(timeoutMs, 180000)});
+      return {text: parsed.text, provider: parsed.provider, pages: parsed.pages, method: parsed.method + '+images'};
+     } catch { /* fall back to text layer + image OCR */ }
+    }
+    if (imageInfo.significant > 0 && vision.configured) {
+     const images = await ocrPdfEmbeddedImages(pdfPath, dir);
+     if (images.length) {
+      const combined = cleanText([text, '--- PDF 内嵌图片 OCR ---', ...images.map(image => '第 ' + image.page + ' 页图片（' + image.width + '×' + image.height + '）：\n' + image.text)].join('\n\n'));
+      return {text: combined, provider: 'pdftotext+vision-images', pages: null, method: 'text-layer+images', images: images.length};
+     }
+    }
+    return {text, provider: 'pdftotext', pages: null, method: 'text-layer', images: imageInfo.significant};
+   }
    if (mineru.configured) {
     try {
      const parsed = await parseMineru({buffer: data, mime: 'application/pdf', config: mineru, fetchImpl, timeoutMs: Math.max(timeoutMs, 180000)});

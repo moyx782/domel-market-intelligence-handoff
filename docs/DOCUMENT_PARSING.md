@@ -70,6 +70,21 @@ OCR 文本不塞进事件 JSON，而是：
 - Agent 报告：2 份材料、3145 字符、含来源 URL 与引文、6 条核验警告；
 - 材料文本只读接口、事件详情 UI 均验证通过，0 console/page error。
 
+## 4.1 内嵌图片补识（修复“部分图片未识取到”）
+
+| 场景 | 行为 |
+|---|---|
+| 网页正文文字够多，但含内嵌图片 | 浏览器渲染前自动滚动；对尺寸足够的 `<img>` 逐个元素截图 + 视觉 OCR，追加“网页内嵌图片 OCR”段（`engine=ocr-images`） |
+| 懒加载/轮播图 | 自动滚动触发加载；默认每页最多 2 张（`OCR_MAX_EMBEDDED_IMAGES`） |
+| 页面文字很长 | 默认仅文字 < 4000 时触发；`OCR_WEB_IMAGES_ALWAYS=1` 可强制 |
+| 文本层 PDF + 重要内嵌图片 | MinerU token 可用 → MinerU vlm（同时拿到文字层与图片内容）；否则 `pdfimages` 提取大图逐张视觉 OCR，拼到 pdftotext 文本后（`pdfimages` 检测，面积阈值过滤 logo/图标） |
+| 纯文本 PDF | 仍走 pdftotext，不增加成本 |
+
+实测见 `evidence/ocr/IMAGE_OCR_2026-11-04.md`：
+图文网页 480 字符 + 2 图 → 2 张图片文本追加成功；
+文本层 PDF + 名单截图 → MinerU 输出 103 字符含图片文字；
+全量 272/272。
+
 ## 5. 自适应抓取回退（Agent）
 
 普通采集不完整时（`event.enrich` 收集 0 页且有官网/来源 URL）：

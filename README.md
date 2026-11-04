@@ -23,7 +23,7 @@
 | Agent 技能包：内置 5 个 SKILL（本地 API、展会情报、来源采集、证据规范、Agent 研究），新数据目录自动导入 | ✅ |
 | Agent 驱动研究：项目页「Agent 研究」让 Agent 实际调用技能/本地 API 收集网页，写 `research-result.json` 后校验入审核 | ✅ |
 | 前端自动化质量矩阵：6 页 × 2 语言 × 2 视口 + 角色/异常/空状态/键盘/可访问性，共 168 项断言，一条命令 | ✅ |
-| **OCR 真实可用**：视觉模型 OCR + pdftotext/pdftoppm；**MinerU Token `vlm` 精准解析（复用前端 token）**；扫描 PDF/纯图片网页自动 OCR，进入事件「材料清单」 | ✅ |
+| **OCR 真实可用**：视觉模型 OCR + pdftotext/pdftoppm；**网页/PDF 内嵌图片补识（修复漏图）**；**MinerU Token `vlm` 精准解析（复用前端 token）**；扫描 PDF/纯图片网页自动 OCR，进入事件「材料清单」 | ✅ |
 | **Agent 整理汇报**：`event.agent-report` 读 OCR 材料生成带逐字引文/待核验项的 Markdown 报告 | ✅ |
 | **Agent 自适应抓取**：采集不完整时 `agent.fetch` 用浏览器/滚动/截图 OCR 补抓，结果进材料/来源 | ✅ |
 | 展会页（首页）：列表/时间轴、筛选、详情、发现/补全/手动修正/导出 | ✅ |
@@ -114,7 +114,7 @@ seed/geo-cn.json          国家/省/市/区县与展馆地理表（展会地点
 ## 测试与验收
 
 ```bash
-npm test                        # 270 个 Node 测试
+npm test                        # 272 个 Node 测试
 npm run build                   # tsc + vite
 
 # 独立验收（isolated data dir，脚本头注释有完整命令）：

@@ -904,7 +904,7 @@ export function createCollector({
   });
  }
 
- async function renderWithBrowser(targetUrl, {signal, screenshot = false} = {}) {
+ async function renderWithBrowser(targetUrl, {signal, screenshot = false, ocrImages = false, maxImages = 2} = {}) {
   const browser = await abortableCall(getBrowser(), signal);
   const page = await abortableCall(browser.newPage({userAgent}), signal);
   try {
@@ -919,6 +919,18 @@ export function createCollector({
    if (typeof page.waitForTimeout === 'function') {
     await abortableCall(page.waitForTimeout(300), signal).catch(() => {});
    }
+   // Scroll through the page so lazy-loaded images and content are present
+   // before we extract text/screenshots.
+   if (typeof page.evaluate === 'function') {
+    await abortableCall(page.evaluate(async () => {
+     const step = Math.max(400, Math.floor(window.innerHeight * 0.8));
+     for (let y = 0; y < Math.min(document.documentElement.scrollHeight, 12000); y += step) {
+      window.scrollTo(0, y);
+      await new Promise(resolve => setTimeout(resolve, 80));
+     }
+     window.scrollTo(0, 0);
+    }), signal).catch(() => {});
+   }
    const html = await abortableCall(page.content(), signal);
    const finalUrl = typeof page.url === 'function' ? page.url() : targetUrl;
    let image = null;
@@ -927,7 +939,29 @@ export function createCollector({
      image = await abortableCall(page.screenshot({fullPage: true, type: 'png'}), signal);
     } catch { /* screenshot OCR is a best-effort augment */ }
    }
-   return {html, finalUrl, image};
+   // OCR each significant embedded image, not just the page screenshot: carousels
+   // and image lists often contain text that a single page screenshot misses.
+   const images = [];
+   if (ocrImages && typeof page.evaluate === 'function' && typeof page.locator === 'function') {
+    try {
+     const descriptors = await abortableCall(page.evaluate((max) => Array.from(document.images)
+      .map((img, index) => ({
+       index,
+       width: img.naturalWidth || 0,
+       height: img.naturalHeight || 0,
+       src: img.currentSrc || img.src || '',
+      }))
+      .filter(item => item.width >= 240 && item.height >= 160)
+      .slice(0, max), maxImages), signal);
+     for (const descriptor of descriptors) {
+      try {
+       const buffer = await abortableCall(page.locator('img').nth(descriptor.index).screenshot({type: 'png', timeout: 8000}), signal);
+       if (buffer?.length) images.push(buffer);
+      } catch { /* an image can disappear or be hidden; keep going */ }
+     }
+    } catch { /* image OCR is an augment, never a failure */ }
+   }
+   return {html, finalUrl, image, images};
   } finally {
    try { await page.close?.(); } catch { /* page may already be closed */ }
   }
@@ -1026,9 +1060,16 @@ export function createCollector({
    let ocrError = null;
    let values = null;
 
-   if (allowPlaywright && text.length < MIN_TEXT_LENGTH) {
+   const webImageOpportunity = Boolean(ocr?.configured) && /<img\b/i.test(decodedHtml)
+    && (process.env.OCR_WEB_IMAGES_ALWAYS === '1' || text.length < (Number(process.env.OCR_WEB_IMAGES_TEXT_LIMIT) || 4000));
+   if (allowPlaywright && (text.length < MIN_TEXT_LENGTH || webImageOpportunity)) {
     try {
-     const rendered = await renderWithBrowser(finalUrl, {signal, screenshot: Boolean(ocr?.configured)});
+     const rendered = await renderWithBrowser(finalUrl, {
+      signal,
+      screenshot: Boolean(ocr?.configured),
+      ocrImages: Boolean(ocr?.configured),
+      maxImages: Math.max(1, Number(process.env.OCR_MAX_EMBEDDED_IMAGES) || 2),
+     });
      if (rendered?.html) {
       const renderedReadable = extractReadable(rendered.html, {url: rendered.finalUrl ?? finalUrl});
       if (renderedReadable.text.length > text.length) {
@@ -1051,6 +1092,23 @@ export function createCollector({
        }
       } catch (error) {
        ocrError = {code: 'OCR_FAILED', message: messageOf(error)};
+      }
+     }
+     // Embedded image OCR (only when the page screenshot OCR did not already
+     // produce its text, to avoid paying twice for the same content).
+     if (ocr?.configured && Array.isArray(rendered?.images) && rendered.images.length && engine !== 'ocr-browser') {
+      const imageTexts = [];
+      for (const imageBuffer of rendered.images) {
+       try {
+        const recognized = await ocr.recognizeImage(imageBuffer, {mime: 'image/png'});
+        const normalized = String(recognized ?? '').trim();
+        if (normalized.length >= 10 && !text.includes(normalized.slice(0, 80))) imageTexts.push(normalized);
+       } catch { /* one image failure must not fail the page */ }
+      }
+      if (imageTexts.length) {
+       text = (text + '\n\n--- 网页内嵌图片 OCR ---\n\n' + imageTexts.join('\n\n')).trim();
+       engine = engine === 'http' ? 'ocr-images' : engine;
+       ocrInfo = {provider: 'vision', method: 'embedded-images', images: imageTexts.length};
       }
      }
     } catch (error) {

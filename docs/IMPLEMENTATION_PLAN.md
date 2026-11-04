@@ -515,3 +515,15 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 5. **测试**：`tests/mineru.test.mjs` 用假 MinerU 服务验证 token 优先级（UI token 覆盖 env）、
    上传/轮询/zip Markdown 解析、状态接口不泄露 token；`npm run test:mineru`
    用前端真实 token 解析扫描 PDF（本机 PASS：provider=mineru-vlm，47 字符）；全量 270/270。
+
+## 25. 迭代（2026-11-04）：修复“部分图片未识取到”
+
+1. 网页：Playwright 渲染前自动滚动触发懒加载；页面文字 <4000 且含 `<img>` 时进入渲染，
+   对尺寸足够的图片逐个元素截图 + 视觉 OCR（默认最多 2 张），`engine=ocr-images`；
+   `OCR_WEB_IMAGES_ALWAYS=1` 可强制；截图 OCR 仍保留。
+2. PDF：`pdfimages -list` 检测内嵌图片尺寸；文本层 PDF 有重要图片时优先 MinerU vlm
+   （同时解析文字层与图片），无 token 则提取大图逐张视觉 OCR 拼到 pdftotext 文本后；
+   纯文本 PDF 不受影响。文本层阈值 200→20，避免短文本 PDF 被误判为扫描件。
+3. 测试：`collector-ocr` 图文网页图片 OCR、`ocr-pdf-images` 文本层+图片 OCR；
+   真实验证图文网页 `ocr.images=2`、MinerU `103 字符`、视觉兜底 `pdftotext+vision-images`。
+   全量 272/272。

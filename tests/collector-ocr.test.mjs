@@ -88,3 +88,47 @@ test('an image-only HTML page falls back to screenshot OCR', async () => {
  assert.match(result.text, /上海新国际博览中心/);
  await collector.close?.();
 });
+
+test('significant embedded images are OCRed even when the page already has text', async () => {
+ const longText = '展会介绍与参展观众登记信息。'.repeat(40);
+ const html = '<!doctype html><html><head><title>Image-rich page</title></head><body><p>' + longText + '</p><img src="/a.png"><img src="/b.png"></body></html>';
+ const fakePage = {
+  setDefaultTimeout() {},
+  async goto() {},
+  async waitForTimeout() {},
+  async content() { return html; },
+  url() { return 'https://example.test/image-rich'; },
+  async screenshot() { return Buffer.from('page screenshot'); },
+  async evaluate(fn, arg) {
+   if (arg !== undefined) {
+    return [{index: 0, width: 900, height: 600, src: 'https://example.test/a.png'}, {index: 1, width: 800, height: 500, src: 'https://example.test/b.png'}];
+   }
+   return null;
+  },
+  locator() {
+   return {nth(index) { return {async screenshot() { return Buffer.from('image-' + index); }}; }};
+  },
+  async close() {},
+ };
+ const fakeBrowser = {async newPage() { return fakePage; }, async close() {}};
+ const ocr = {
+  configured: true,
+  async recognizeImage(buffer) {
+   return buffer.toString() === 'image-0' ? '图片一：展商 A 公司' : '图片二：展商 B 公司';
+  },
+ };
+ const collector = createCollector({
+  fetchImpl: fakeFetch({
+   'https://example.test/image-rich': () => new Response(html, {status: 200, headers: {'content-type': 'text/html; charset=utf-8'}}),
+  }),
+  launchBrowser: async () => fakeBrowser,
+  ocr,
+ });
+ const result = await collector.collect('https://example.test/image-rich');
+ assert.equal(result.ok, true);
+ assert.match(result.text, /网页内嵌图片 OCR/);
+ assert.match(result.text, /展商 A 公司/);
+ assert.match(result.text, /展商 B 公司/);
+ assert.equal(result.ocr.method, 'embedded-images');
+ await collector.close?.();
+});

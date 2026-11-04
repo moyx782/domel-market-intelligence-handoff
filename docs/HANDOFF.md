@@ -50,7 +50,7 @@ npm run dev             # 前端: http://127.0.0.1:5174
 测试、构建与验收：
 
 ```bash
-npm test                                          # 270 个 Node 测试
+npm test                                          # 272 个 Node 测试
 npm run build                                     # tsc + vite
 
 # 独立验收（脚本会准备隔离数据，不写仓库 .local/）：
@@ -114,7 +114,7 @@ src/
   messages-*.ts        新页面词条
   tasks-sources.css / events-agent.css  新页面样式
 
-tests/                 270 个 Node 测试
+tests/                 272 个 Node 测试
 tests/fixtures/        可执行 mock MCP server、API fakes、HTML/事件 fixtures
 scripts/               demo:lan、ui-acceptance、acceptance-api、agent-admin、pi spike
 evidence/ui-acceptance/ 浏览器验收截图与清单
@@ -154,7 +154,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 | 境外自办展 | `中国（阿联酋）贸易博览会`/`China (UAE) Trade Expo` 等按名称括号里的国家/城市归类为境外（region=global/eu），加"名称含中国但举办地在境外"notes；`tests/event-jobs-overseas.test.mjs` |
 | AI 模型 UI 配置 | 设置 → AI 模型填 Key/模型/Base URL（只写不读，0600，即时生效）；自定义 Base URL 切到本地 OpenAI 兼容模型；`tests/llm-settings.test.mjs`（5 用例） |
 | Agent 技能包 + Agent 研究 | `seed/skills/` 5 个技能（domel-api、event-intelligence、source-collection、evidence-quality、agent-research）新数据目录自动导入；项目页「Agent 研究」→ `project.agent-research` 任务，Agent 用 bash/curl 调本地 API 收集网页并写 `research-result.json`，服务端校验引文/竞品/focus/公开 URL 后入库待审核；`tests/agent-research.test.mjs`（7 用例） |
-| OCR + 材料清单 + Agent 报告 | `npm run test:mineru` 可测当前 MinerU/前端 token；`server/ocr.mjs` 视觉 OCR（DeepSeek 实测中英文正确）+ pdftotext/pdftoppm；**MinerU Token Standard API（`vlm`，复用设置页 Token，`server/mineru-client.mjs`）**；PDF/图片/纯图片网页自动 OCR；事件 `materials[]` + `materialsReport`；`document.parse` → OCR 材料 → `event.agent-report` Agent 报告（逐字引文校验）；事件详情可查看 OCR 文本/材料摘要/报告；`npm run test:ocr` 真实冒烟 |
+| OCR + 材料清单 + Agent 报告 | **网页/PDF 内嵌图片补识**（`engine=ocr-images` / MinerU 或 `pdftotext+vision-images`）；`npm run test:mineru` 可测当前 MinerU/前端 token；`server/ocr.mjs` 视觉 OCR（DeepSeek 实测中英文正确）+ pdftotext/pdftoppm；**MinerU Token Standard API（`vlm`，复用设置页 Token，`server/mineru-client.mjs`）**；PDF/图片/纯图片网页自动 OCR；事件 `materials[]` + `materialsReport`；`document.parse` → OCR 材料 → `event.agent-report` Agent 报告（逐字引文校验）；事件详情可查看 OCR 文本/材料摘要/报告；`npm run test:ocr` 真实冒烟 |
 | Agent 自适应抓取 | 采集不完整时 `agent.fetch` 任务用 `scripts/adaptive-fetch.mjs`（HTTP→浏览器→滚动/iframe→截图 OCR）补抓，结果进材料/来源并触发报告；不绕 robots/登录/付费墙；`tests/agent-fetch.test.mjs` |
 | 前端自动化质量矩阵 | `npm run test:frontend`：自动起隔离 API/Vite，覆盖 6 页 × 2 语言 × 2 视口 + admin/user/viewer + 500/空状态 + 键盘/skip link/dialog/语言切换/文档标题/可达结构；**168 项全 PASS**，产出截图与 `evidence/frontend-quality/REPORT.md`；静态 i18n 覆盖在 `npm test`；CI 工作流 `.github/workflows/frontend-quality.yml` |
 | 真实 DeepSeek 研究 | 2026-11-03：9 个候选 URL，抓 5 页，1 条 finding，状态 partial |
@@ -163,7 +163,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 | Agent + 历史 | 真实 DeepSeek 对话一次，`agent/transcripts.json` 记录 user/assistant/toolCalls；`/api/v1/agent/sessions` 可读 |
 | 浏览器验收 | **198 项 PASS / 0 FAIL**，0 console/page error；六页 + 角色三态 + 中英 + 390×844 移动端；展会详情含国家/省/市/区县与可点击官网/来源 URL（见 `evidence/ui-acceptance/UI_ACCEPTANCE.md`） |
 | API 验收 | **179 项 PASS / 0 FAIL**（任务/展会/来源/recipes/Agent 历史/权限矩阵/CORS/生产模式契约）（见 `evidence/task-loop/API_ACCEPTANCE_2026-11-03.log`） |
-| 测试/构建 | `npm test` 270/270；`npm run build` 通过 |
+| 测试/构建 | `npm test` 272/272；`npm run build` 通过 |
 | 生产模式 | 带同源 Origin：`/health` 200、`/` 构建产物、`/assets/*.js|css` 200、SPA 回退、`/api/v1/workspace` 200；`evil.test` Origin 访问 API 403（见 `evidence/task-loop/PRODUCTION_CHECK_2026-11-03.md`） |
 
 ## 未完成 / 半成品（不要当成已交付）
@@ -219,7 +219,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 ```bash
 cd domel-market-intelligence
 npm ci
-npm test                       # 期望 270 passed
+npm test                       # 期望 272 passed
 npm run build
 npm run demo:api               # API 8788
 npm run dev                    # 前端 5174
