@@ -24,7 +24,7 @@
 | 来源页、设置页 MCP/Skills/Plugins/Recipes | ✅ | `src/Sources.tsx`、`src/Settings.tsx` |
 | Agent 页 + 运行历史（viewer 只读） | ✅ | `src/Agent.tsx`、`server/transcripts.mjs` |
 | 四级角色 viewer/user/admin/system（功能层） | ✅ | `server/permissions.mjs` |
-| MinerU 文档解析 | ⚠️ 配置/状态/parse 路由已定义；真实解析未启用（M3d 边界） | `server/mineru.mjs`、`docs/DOCUMENT_PARSING.md` |
+| MinerU 文档解析 | ✅ 真实解析已启用：Standard API（vlm）复用前端 Token；扫描件/图片优先 MinerU，文本层 PDF 走 pdftotext，失败回退视觉 OCR | `server/mineru-client.mjs`、`server/ocr.mjs`、`docs/DOCUMENT_PARSING.md` |
 | Agent 自适应抓取（recipe 自动生成/审批后复用） | ⚠️ 存储/沙箱/审批可用；Agent 自动提出流程未接 | `server/recipes.mjs` |
 | 登录 / TLS / 存储加密 / 多用户 | ❌ 不在本仓库范围 | — |
 | 任务队列换 Postgres/分布式 | ❌ 未做；接口已隔离 | `task-queue.mjs` |
@@ -168,7 +168,7 @@ docs/                  HANDOFF/IMPLEMENTATION_PLAN/TASK_QUEUE/EVENT_LIBRARY/AGEN
 
 ## 未完成 / 半成品（不要当成已交付）
 
-1. **MinerU 真实解析未启用**：`POST /api/v1/events/:id/parse` 对已配置且 downloadable 的文档返回 501，只登记链接与可获取性；后续按 [DOCUMENT_PARSING.md](DOCUMENT_PARSING.md) 的步骤实现（新增任务 kind `document.parse`）。
+1. **MinerU 解析已启用**：`POST /api/v1/events/:id/parse` 入队 `document.parse`，下载文档后按 pdftotext → MinerU vlm → 视觉 OCR 优先级解析，结果进入事件材料清单并触发 Agent 报告；用 `npm run test:mineru` 验证当前 Token。
 2. **Agent 自适应抓取未闭环**：recipe 的存储/沙箱/审批/复用已实现，但还没有"失败页 → Agent 读取 HTML 快照 → 提出 recipe → 管理员审批"的自动流程与 UI 入口。
 3. **研究仍非 Agent 驱动**：`project.research` 走固定管线（DeepSeek Search/Fetch/Extraction），未由 Pi Agent 自主调用工具完成。
 4. **没有 PDF 简报导出**：只有 CSV/JSON/浏览器打印。
@@ -283,7 +283,7 @@ git log --oneline -5
 
 ### 4. 下一步（优先级建议）
 
-1. **M3d 真实解析**：MinerU 任务化（`document.parse`），只对 downloadable + 管理员启用；失败不影响链接展示。
+1. **M3d 边界（已完成）**：`document.parse` 已任务化并接入 MinerU/视觉 OCR；失败不影响链接展示。
 2. **Agent 自适应抓取闭环**：失败页快照 → Agent 生成 recipe → 设置页审批 → 确定性复用；补 UI 入口与测试。
 3. **Agent 驱动研究**：让 Agent 通过工具（source registry/collector/event store）执行研究，而不是固定管线。
 4. **展会数据质量**：来源增加日历页/RSS/sitemap 解析器；日期冲突与历史届次处理；批量核验与导出模板。

@@ -95,7 +95,7 @@ AI Key 可以走 `.env.host`，也可以由 admin 在设置页 **AI 模型** 里
 3. `docs/TASK_QUEUE.md` — 持久任务队列/任务 API/SSE
 4. `docs/EVENT_LIBRARY.md` — 来源注册表/采集器/展会资料库/官网补全/境外自办展
 5. `docs/AGENT_RUNTIME.md` — MCP/Skills/插件/角色/Agent 历史
-6. `docs/DOCUMENT_PARSING.md` — MinerU 边界（解析未启用）
+6. `docs/DOCUMENT_PARSING.md` — OCR/材料清单/Agent 报告（MinerU 已启用，复用前端 Token）
 7. `docs/DEPLOYMENT.md` — 内网部署（systemd/Docker/LAN）
 8. `docs/TEAM_CONTRACTS.md` — 并行开发接口契约（二次开发参考）
 9. `README.md` — 总览 + 命令
@@ -155,7 +155,7 @@ API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run
 
 - 只在**可信内网**用；无认证、无 TLS；同一 `.local/` 只能一个进程。
 - 安全/登录/加密/多用户不在本仓库范围，由专项处理。
-- MinerU 真实解析未启用（`/events/:id/parse` 对已配置文档返回 501，只登记链接与可获取性）。
+- MinerU 真实解析已启用：事件文档可「使用 OCR 解析」，扫描件优先 MinerU vlm（复用前端 Token），失败回退视觉 OCR。
 - Agent 自动生成 recipe 的闭环、Agent 驱动研究、PDF 简报未完成；任务队列仍是单进程 JSON。
 - 抓取遵守 robots.txt/站点条款，不绕登录/付费墙/验证码。
 - 展会资料只列事实与来源，不做"推荐参展/不参展"判断；缺失/冲突会写进 notes。
@@ -165,7 +165,7 @@ API_BASE=http://127.0.0.1:8791 ACCEPTANCE_DATA_DIR=/tmp/domel-acceptance npm run
 1. **筛选与偏好（用户最新提出，未实现）**：展会页支持正向/反向筛选（包含/排除关键词、
    地区、行业等），可设置"倾向"（偏好地区/行业/城市/规模等）并参与排序或高亮，
    提高自定义程度（保存筛选方案/视图预设）。需要 API + 前端 + 测试。
-2. MinerU 真实解析：任务化 `document.parse`，只对 downloadable + 管理员启用的文档。
+2. MinerU 解析已完成：任务化 `document.parse`（downloadable 文档）；`npm run test:mineru` 验证 Token。
 3. Agent 自适应抓取闭环：失败页快照 → Agent 生成 recipe → 设置页审批 → 确定性复用。
 4. Agent 驱动研究（替换固定管线）。
 5. 展会数据质量：更多日历页/RSS/sitemap 解析器；日期冲突处理；核验工作流。

@@ -165,7 +165,7 @@ node scripts/agent-admin.mjs show
 - **升级**：`git pull && npm ci && npm run build`；旧 `.local/events.json` 在读取时会自动补
   `province`/`district` 空字段，离线回填用 `npm run event:backfill-geo`（先停服务）。
 - **MCP stdio**：`agent/mcp.json` 里的 `command`/`args` 用绝对路径；子进程继承工作区目录。
-- **MinerU**：默认关闭；官方 API 需 token，自建需独立服务与 GPU。见 [DOCUMENT_PARSING.md](DOCUMENT_PARSING.md)。
+- **MinerU**：默认 provider=none（走视觉 OCR 兜底）；可在设置页选 official + 前端 Token（只写不读、服务端复用），或 local 自建服务。官方 API 需 token，自建需独立服务与 GPU。见 [DOCUMENT_PARSING.md](DOCUMENT_PARSING.md)。
 - **内存**：Agent 会话、MCP 子进程、Playwright Chrome 可能常驻；建议 2 GB 以上。
 - **日志**：进程 stdout/stderr；systemd 用 journalctl，Docker 用 compose logs。
 
