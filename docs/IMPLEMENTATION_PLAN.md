@@ -527,3 +527,19 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 3. 测试：`collector-ocr` 图文网页图片 OCR、`ocr-pdf-images` 文本层+图片 OCR；
    真实验证图文网页 `ocr.images=2`、MinerU `103 字符`、视觉兜底 `pdftotext+vision-images`。
    全量 272/272。
+
+## 26. 迭代（2026-11-04）：提供的 PDF 自动 OCR
+
+用户要求“对于提供 PDF 的内容直接进行 OCR，或者用 MCP 让 Agent 判断”。采用**自动 OCR 为主**：
+
+1. 新增 `server/document-autoparse.mjs`：选择 downloadable、未解析、无材料的 PDF/图片文档。
+2. `event.enrich` 完成后自动排队 `document.parse`（默认每事件 3 份；
+   `AUTO_OCR_DOCUMENTS=0` 关闭），解析后进入材料清单并自动触发 Agent 报告。
+3. 解析仍复用 MinerU vlm（有 token）→ 视觉 OCR 兜底；不跳过 robots/登录/付费墙。
+4. 实测：事件补全后自动生成 `document.parse`（payload.auto=true），扫描 PDF
+   `provider=vision-ocr` 61 字符，材料/文档字段更新，Agent 报告入队。
+5. 测试 `tests/document-autoparse.test.mjs`；全量 274/274。
+
+> MCP 方案保留为可选：若后续需要 Agent 对“非事件文档/需要判断是否值得 OCR”的 PDF 自主决定，
+> 可提供 `domel_parse_document`/`domel_list_documents` 等 MCP 工具；当前自动 OCR 已覆盖事件内
+> 提供的 PDF。

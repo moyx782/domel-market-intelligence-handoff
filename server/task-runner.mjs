@@ -24,6 +24,7 @@ import {createOcr} from './ocr.mjs';
 import {openMaterialStore} from './materials.mjs';
 import {runAgentReport} from './agent-report.mjs';
 import {runAgentFetch} from './agent-fetch.mjs';
+import {selectDocumentsForOcr} from './document-autoparse.mjs';
 
 const SOURCE_MIN_INTERVAL_MS = 30_000;
 
@@ -423,11 +424,44 @@ export function createTaskRunner({
   return {url, eventId, chars: result.text.length, engine: result.engine, materialId: saved.material.id, strategies: result.strategies};
  }
 
+ // "Provided PDF → direct OCR": after enrichment records downloadable documents,
+// queue document.parse for the first few OCR-able ones automatically. This is
+// still bounded (AUTO_OCR_MAX_DOCS) and can be disabled.
+ async function autoQueueDocumentOcr(eventId, ctx) {
+  if (env.AUTO_OCR_DOCUMENTS === '0') return [];
+  if (!ocr?.configured) return [];
+  const event = eventStore.get(eventId);
+  if (!event) return [];
+  const documents = selectDocumentsForOcr(event, {max: Number(env.AUTO_OCR_MAX_DOCS) || 3});
+  const queued = [];
+  for (const document of documents) {
+   try {
+    const task = await queue.create({
+     kind: 'document.parse',
+     eventId,
+     priority: 3,
+     payload: {eventId, url: document.url, title: document.title, auto: true},
+    });
+    queued.push(task.id);
+   } catch { /* an active parse for this document already exists */ }
+  }
+  if (queued.length && typeof ctx.log === 'function') {
+   await ctx.log('info', '自动 OCR：已排队 ' + queued.length + ' 份可下载文档');
+  }
+  return queued;
+ }
+
  const eventEnrichHandler = eventJobs['event.enrich'];
  async function runEnrichWithAgentFallback(ctx) {
   const result = await eventEnrichHandler(ctx);
   try {
    const eventId = String(result?.eventId ?? ctx.task.eventId ?? '');
+   if (eventId) {
+    try {
+     const autoOcrTaskIds = await autoQueueDocumentOcr(eventId, ctx);
+     if (autoOcrTaskIds.length) result.autoOcrTaskIds = autoOcrTaskIds;
+    } catch { /* auto OCR is best-effort and must not fail enrichment */ }
+   }
    if ((result?.collected ?? 0) === 0 && eventId && env.AGENT_FETCH_FALLBACK !== '0' && typeof getAgentRuntime === 'function') {
     const event = eventStore.get(eventId);
     const url = event?.website || event?.sources?.[0]?.url;

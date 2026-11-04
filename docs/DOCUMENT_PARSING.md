@@ -38,6 +38,29 @@
 | 纯图片/Canvas 网页 | 作为普通采集进入 OCR 分支，OCR 文本自动进入材料清单 |
 | OCR 不可用 | 保持 fail-closed（`BAD_CONTENT_TYPE` / 409），不会假装解析成功 |
 
+## 2.1 提供的 PDF：自动 OCR（默认开启）
+
+事件补全（`event.enrich`）会记录文档链接与可获取性；补全结束后，系统自动检查该事件的
+`documents[]`：
+
+- `status=downloadable`
+- 扩展名为 PDF / PNG / JPEG / WebP / TIFF
+- 尚未解析（无 `parseProvider/parsedAt`）
+- 还没有同名 material
+
+满足条件的文档自动入队 `document.parse`：
+
+- 默认每事件最多 **3 份**（`AUTO_OCR_MAX_DOCS`）
+- `AUTO_OCR_DOCUMENTS=0` 可关闭自动 OCR
+- 解析优先级：文本层 PDF → pdftotext；扫描/复杂/内嵌大图 + MinerU token → MinerU vlm；
+  否则视觉 OCR 兜底
+- OCR 完成后写材料清单，并自动触发 Agent 材料报告
+- 人工仍可在事件详情对单个文档再次「使用 OCR 解析」
+
+实测（隔离 demo）：补全事件后自动出现 `document.parse` 任务（`payload.auto=true`），
+扫描 PDF 识别 61 字符并进入材料清单，无需人工点击。见
+`evidence/ocr/AUTO_OCR_2026-11-04.md`。
+
 ## 3. 材料清单（Materials）
 
 OCR 文本不塞进事件 JSON，而是：
