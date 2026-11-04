@@ -197,3 +197,21 @@ Requirements/limits: a configured agent model with tool calling; `bash` and file
 tools enabled in Agent tools (T0 defaults); 0–25 findings per run; if the agent
 produces no usable source the task fails instead of writing invented evidence.
 There is no automatic approval — findings still go through the review UI.
+
+## OCR materials and agent reports
+
+`event.agent-report` lets the agent turn OCR/parsed materials into a Chinese
+Markdown report: it reads each material's full text, writes `event-report.json`
+with `reportMarkdown` + per-material summaries/quotes + warnings, and the server
+validates known URLs and verbatim quotes before writing `event.materialsReport`.
+The UI (event detail → OCR materials) shows the summaries, material text and the
+report; both document OCR and report generation are exposed as queue tasks.
+
+## Adaptive fetch fallback
+
+When normal collection gets no usable page, `event.enrich` can queue
+`agent.fetch` (env `AGENT_FETCH_FALLBACK=0` disables it). The agent runs
+`scripts/adaptive-fetch.mjs` with its bash/file permissions: HTTP → browser render
+→ scroll/iframe text → screenshot OCR. It honours robots/login/paywall limits,
+saves the result as an `agent-adaptive` material + candidate source, and queues
+the material report. Manual API: `POST /api/v1/agent/fetch {url,eventId?}`.

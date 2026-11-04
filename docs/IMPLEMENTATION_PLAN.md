@@ -477,3 +477,40 @@ POST  /api/v1/recipes/:id/test               # admin+：对真实页面执行 re
 3. 移除滚动到页面底部的旧行为，长列表不会整页跳动；详情面板保留 aria-label。
 4. 验收新增「详情内联展开在选中行下」「再次点击收起」「View details 重新展开」
    「viewer 可内联只读展开」；浏览器验收 197/197，0 console/page error。
+
+## 23. 迭代（2026-11-04）：OCR 可用 + 材料清单 + Agent 整理汇报
+
+用户确认 OCR 结果可以放入材料清单，由 DeepSeek Agent 整理并汇报，需要 OCR 的网页也可放入。
+
+1. **真实 OCR**：`server/ocr.mjs` 使用当前 AI 视觉模型（DeepSeek 已实测中英文正确）+
+   `pdftotext` 文本层 + `pdftoppm` 扫描 PDF 逐页 OCR；`npm run test:ocr` 真实冒烟通过。
+2. **采集接入**：collector 支持 PDF/图片 OCR（`ocr-document`）与文字过薄 HTML 的截图 OCR
+   （`ocr-browser`）；纯图片网页可作为材料进入事件资料。
+3. **材料清单**：事件新增 `materials[]`（全文落 `.local/documents/materials/`，元数据+textPath）
+   和 `materialsReport`；事件详情可解析文档、查看 OCR 文本/材料摘要/报告；API 提供
+   `/events/:id/parse`、`/events/:id/agent-report`、`/materials/:id/text`。
+4. **Agent 整理汇报**：`event.agent-report` 读取材料全文，生成带逐字引文与待核验项的
+   Markdown 报告，服务端校验后回写材料摘要和 `materialsReport`；document.parse 后自动入队。
+5. **Agent 自适应抓取回退**：采集不完整时自动 `agent.fetch`，Agent 用
+   `scripts/adaptive-fetch.mjs`（HTTP→浏览器→滚动/iframe→截图 OCR）补抓，结果进材料/来源
+   并触发报告；不绕过 robots/登录/付费墙。
+6. **实测**：扫描 PDF OCR 1 页/61 字符；纯图片网页 47 字符；材料 2 份；Agent 报告 3145 字符；
+   自适应抓取任务成功，材料 provider=agent-adaptive。`npm test` 271/271。
+
+## 24. 迭代（2026-11-04）：MinerU Token 精准解析（复用前端 Token）
+
+用户要求接入 MinerU Token 渠道，并复用前端设置页填入的 Token。
+
+1. **MinerU Standard API 客户端** `server/mineru-client.mjs`：
+   `POST /api/v4/file-urls/batch` 获取上传 URL → PUT 文件 → 轮询
+   `/api/v4/extract-results/batch/{batch_id}` → 下载 zip → 提取 `full.md`。
+   默认 `model_version=vlm`、`is_ocr=true`、表格/公式开启。
+2. **Token 复用**：`createOcr({getMineru})` 每次解析读取 `agentStore.ocr()`；
+   设置页写入 `.local/agent-config.json`（0600，只写不读），优先于 `MINERU_API_TOKEN`，
+   解析时即时生效，不再需要重启。
+3. **解析优先级**：文本层 PDF → pdftotext；扫描/图片/复杂文档 + MinerU token →
+   MinerU vlm；MinerU 失败/未配置 → 视觉 OCR 兜底；HTML 截图 OCR 仍走视觉。
+4. **状态/UI**：`/api/v1/ocr/status` 返回 `mineru.tokenSet/modelVersion/baseUrl`
+   （永不回 token）；设置页显示“MinerU token 已配置，解析使用 vlm”。
+5. **测试**：`tests/mineru.test.mjs` 用假 MinerU 服务验证 token 优先级（UI token 覆盖 env）、
+   上传/轮询/zip Markdown 解析、状态接口不泄露 token；全量 270/270。

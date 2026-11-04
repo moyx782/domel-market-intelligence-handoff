@@ -21,7 +21,7 @@ test('OCR status exposes provider configuration without the token', async () => 
   const disabled = await (await fetch(off.url + '/api/v1/ocr/status')).json();
   assert.equal(disabled.provider, 'none');
   assert.equal(disabled.configured, false);
-  assert.equal(disabled.policy, 'link-and-availability-first');
+  assert.equal(disabled.policy, 'ocr-then-agent');
 
   const response = await fetch(on.url + '/api/v1/ocr/status');
   const enabled = await response.json();

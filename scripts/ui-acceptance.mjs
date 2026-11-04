@@ -770,7 +770,7 @@ try {
  // is write-only and never prefilled.
  equal('AI model shows the active model name', await page.getByLabel('Model name').inputValue(), 'deepseek-flash');
  check('AI model reports an environment-configured key', String(await page.getByLabel('API key').getAttribute('placeholder')).includes('Configured'));
- check('AI model status names the provider', /DeepSeek official/.test(await page.locator('.settings-page section.panel.padded').filter({hasText: 'AI model'}).innerText()));
+ check('AI model status names the provider', /DeepSeek official/.test(await page.locator('.settings-page section.panel.padded').filter({has: page.getByRole('heading', {name: 'AI model', exact: true})}).innerText()));
  check('AI key input is never prefilled with the real key', (await page.getByLabel('API key').inputValue()) === '');
  await shot('26-settings-admin');
 

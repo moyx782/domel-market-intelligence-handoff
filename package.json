@@ -23,7 +23,8 @@
     "event:backfill-geo": "node scripts/backfill-event-geo.mjs",
     "event:clean-websites": "node scripts/clean-event-websites.mjs",
     "test:frontend": "node scripts/run-frontend-quality.mjs",
-    "test:frontend:raw": "node scripts/frontend-quality.mjs"
+    "test:frontend:raw": "node scripts/frontend-quality.mjs",
+    "test:ocr": "node scripts/ocr-smoke.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.5.0",

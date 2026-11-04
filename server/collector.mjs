@@ -20,6 +20,8 @@ import {applyRecipe} from './recipes.mjs';
 const DEFAULT_USER_AGENT = 'DomelMarketIntelligence/0.1 (+intranet demo)';
 const DEFAULT_CHROME_PATH = '/usr/bin/google-chrome';
 const HTML_MIME_TYPES = new Set(['text/html', 'application/xhtml+xml']);
+const OCR_MIME_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/tiff', 'image/tif']);
+const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;
 const MIN_TEXT_LENGTH = 300;
@@ -523,8 +525,10 @@ export function createCollector({
  launchBrowser,
  timeoutMs = 20000,
  maxBytes = 2_000_000,
+ maxDocumentBytes = MAX_DOCUMENT_BYTES,
  userAgent = DEFAULT_USER_AGENT,
  limiter,
+ ocr = null,
  now = () => Date.now(),
 } = {}) {
  if (typeof fetchImpl !== 'function') throw Error('createCollector requires a fetch implementation');
@@ -816,23 +820,26 @@ export function createCollector({
    }
    const contentType = headerValue(headers, 'content-type');
    const mime = mimeOf(contentType);
-   if (!HTML_MIME_TYPES.has(mime)) {
+   const isHtml = HTML_MIME_TYPES.has(mime);
+   const isDocument = OCR_MIME_TYPES.has(mime);
+   if (!isHtml && !isDocument) {
     await discardBody(response);
-    throw collectorError('BAD_CONTENT_TYPE', 'Expected HTML but received "' + String(contentType ?? 'no content-type') + '" from ' + targetUrl, {
+    throw collectorError('BAD_CONTENT_TYPE', 'Expected HTML or an OCR-able document but received "' + String(contentType ?? 'no content-type') + '" from ' + targetUrl, {
      permanent: true,
      status,
      contentType,
     });
    }
+   const limit = isDocument ? Math.max(maxBytes, Number(maxDocumentBytes) || MAX_DOCUMENT_BYTES) : maxBytes;
    const declaredLength = Number(headerValue(headers, 'content-length'));
-   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw tooLargeError(targetUrl);
+   if (Number.isFinite(declaredLength) && declaredLength > limit) throw tooLargeError(targetUrl);
    let buffer;
    try {
-    buffer = await raceAbort(readBody(response, request), request.controller, request.info);
+    buffer = await raceAbort(readBody(response, request, limit), request.controller, request.info);
    } catch (error) {
     throw mapFetchError(error, request, targetUrl);
    }
-   return {status, contentType, buffer, bytes: buffer.length};
+   return {status, contentType, mime, kind: isDocument ? 'document' : 'html', buffer, bytes: buffer.length};
   } finally {
    request.finish();
   }
@@ -897,7 +904,7 @@ export function createCollector({
   });
  }
 
- async function renderWithBrowser(targetUrl, {signal} = {}) {
+ async function renderWithBrowser(targetUrl, {signal, screenshot = false} = {}) {
   const browser = await abortableCall(getBrowser(), signal);
   const page = await abortableCall(browser.newPage({userAgent}), signal);
   try {
@@ -914,7 +921,13 @@ export function createCollector({
    }
    const html = await abortableCall(page.content(), signal);
    const finalUrl = typeof page.url === 'function' ? page.url() : targetUrl;
-   return {html, finalUrl};
+   let image = null;
+   if (screenshot) {
+    try {
+     image = await abortableCall(page.screenshot({fullPage: true, type: 'png'}), signal);
+    } catch { /* screenshot OCR is a best-effort augment */ }
+   }
+   return {html, finalUrl, image};
   } finally {
    try { await page.close?.(); } catch { /* page may already be closed */ }
   }
@@ -961,6 +974,45 @@ export function createCollector({
    if (signal?.aborted) return failure({url: requestUrl, robots, error: abortedError(requestUrl)});
 
    const page = await fetchPage(requestUrl, {signal});
+   if (page.kind === 'document') {
+    if (!ocr || typeof ocr.extract !== 'function' || !ocr.configured) {
+     throw collectorError('BAD_CONTENT_TYPE', 'Received "' + String(page.contentType ?? 'document') + '" but OCR is not configured for ' + requestUrl, {
+      permanent: true,
+      status: page.status,
+      contentType: page.contentType,
+     });
+    }
+    try {
+     const extracted = await ocr.extract(page.buffer, {mime: page.mime, url: page.finalUrl});
+     const title = (() => {
+      try {
+       const name = decodeURIComponent(new URL(page.finalUrl).pathname.split('/').filter(Boolean).pop() ?? '');
+       return name || page.finalUrl;
+      } catch { return page.finalUrl; }
+     })();
+     return {
+      ok: true,
+      url: requestUrl,
+      finalUrl: page.finalUrl,
+      status: page.status,
+      engine: 'ocr-document',
+      title,
+      text: extracted.text,
+      html: '',
+      contentType: page.contentType,
+      bytes: page.bytes,
+      fetchedAt: isoNow(),
+      robots,
+      ocr: {provider: extracted.provider, pages: extracted.pages, method: extracted.method},
+     };
+    } catch (error) {
+     throw collectorError('OCR_FAILED', 'OCR failed for ' + requestUrl + ': ' + messageOf(error), {
+      status: page.status,
+      contentType: page.contentType,
+      permanent: false,
+     });
+    }
+   }
    const decodedHtml = decodeHtml(page.buffer, page.contentType);
    const readable = extractReadable(decodedHtml, {url: page.finalUrl});
    let title = readable.title;
@@ -970,11 +1022,13 @@ export function createCollector({
    let engine = 'http';
    let renderError = null;
    let recipeError = null;
+   let ocrInfo = null;
+   let ocrError = null;
    let values = null;
 
    if (allowPlaywright && text.length < MIN_TEXT_LENGTH) {
     try {
-     const rendered = await renderWithBrowser(finalUrl, {signal});
+     const rendered = await renderWithBrowser(finalUrl, {signal, screenshot: Boolean(ocr?.configured)});
      if (rendered?.html) {
       const renderedReadable = extractReadable(rendered.html, {url: rendered.finalUrl ?? finalUrl});
       if (renderedReadable.text.length > text.length) {
@@ -983,6 +1037,20 @@ export function createCollector({
        html = rendered.html;
        finalUrl = rendered.finalUrl || finalUrl;
        engine = 'browser';
+      }
+     }
+     // A JS/canvas/image-only page can stay text-thin after rendering. OCR the
+     // screenshot and use it when it yields more text than the DOM.
+     if (ocr?.configured && rendered?.image && text.length < MIN_TEXT_LENGTH) {
+      try {
+       const recognized = await ocr.recognizeImage(rendered.image, {mime: 'image/png'});
+       if (recognized && recognized.length > text.length) {
+        text = recognized;
+        engine = 'ocr-browser';
+        ocrInfo = {provider: 'vision', method: 'screenshot'};
+       }
+      } catch (error) {
+       ocrError = {code: 'OCR_FAILED', message: messageOf(error)};
       }
      }
     } catch (error) {
@@ -1025,6 +1093,8 @@ export function createCollector({
     robots,
    };
    if (values) result.values = values;
+   if (ocrInfo) result.ocr = ocrInfo;
+   if (ocrError) result.ocrError = ocrError;
    if (renderError) result.renderError = renderError;
    if (recipeError) result.recipeError = recipeError;
    return result;

@@ -221,11 +221,11 @@ Re-run results on the same frozen scripts (data isolated in `/tmp/lead-final2`):
 
 | Check | Result |
 |---|---|
-| Browser acceptance `scripts/ui-acceptance.mjs` | **197 PASS / 0 FAIL**, 0 console/page errors |
+| Browser acceptance `scripts/ui-acceptance.mjs` | **198 PASS / 0 FAIL**, 0 console/page errors |
 | API acceptance `scripts/acceptance-api.mjs` | **179 PASS / 0 FAIL** (province/district CSV + AI model masking/capabilities checks) |
 | Production HTTP (`SERVE_STATIC=1`, same-origin Origin) | `/`, `/assets/*.js|css`, SPA fallback, `/api/v1/workspace` 200; evil Origin 403 |
 | Production browser E2E | Event calendar renders, SPA fallback renders, 0 console/page errors |
-| `npm test` | **255/255** |
+| `npm test` | **270/270** |
 
 The final-iteration logs overwrite the same evidence files
 (`evidence/task-loop/UI_ACCEPTANCE_2026-11-03.log`, `API_ACCEPTANCE_2026-11-03.log`,

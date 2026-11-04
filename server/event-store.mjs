@@ -25,7 +25,7 @@ export const EVENT_EXPORT_COLUMNS = [
  'status', 'sources', 'notes',
 ];
 
-const STRING_FIELDS = ['name', 'city', 'province', 'district', 'country', 'venue', 'organizer', 'website', 'frequency', 'scope', 'area', 'exhibitorListUrl', 'boothPrice', 'ticketPrice'];
+const STRING_FIELDS = ['name', 'city', 'province', 'district', 'country', 'venue', 'organizer', 'website', 'frequency', 'scope', 'area', 'exhibitorListUrl', 'boothPrice', 'ticketPrice', 'materialsReport'];
 const DATE_FIELDS = ['startDate', 'endDate', 'applicationDeadline'];
 const NUMBER_FIELDS = ['edition', 'exhibitorCount', 'visitorCount'];
 const ENUM_FIELDS = {
@@ -35,7 +35,7 @@ const ENUM_FIELDS = {
  exhibitorListStatus: AVAILABILITIES,
 };
 const LIST_FIELDS = ['industries', 'notes'];
-const OBJECT_LIST_FIELDS = ['documents', 'competitors', 'sources'];
+const OBJECT_LIST_FIELDS = ['documents', 'competitors', 'sources', 'materials'];
 const PATCHABLE_FIELDS = new Set([...STRING_FIELDS, ...DATE_FIELDS, ...NUMBER_FIELDS, ...LIST_FIELDS, ...OBJECT_LIST_FIELDS, ...Object.keys(ENUM_FIELDS)]);
 
 const STATUS_RANK = {discovered: 0, enriched: 1, verified: 2, archived: 3};
@@ -202,6 +202,8 @@ function emptyEvent() {
   exhibitorListUrl: '',
   exhibitorListStatus: 'unknown',
   documents: [],
+  materials: [],
+  materialsReport: '',
   competitors: [],
   applicationDeadline: null,
   boothPrice: '',
@@ -262,6 +264,9 @@ function sanitizeDocuments(value, stamp) {
   };
   if (item.parseProvider) document.parseProvider = text(item.parseProvider);
   if (item.parsedAt) document.parsedAt = isoOr(item.parsedAt, stamp);
+  if (Number.isInteger(Number(item.pages)) && Number(item.pages) > 0) document.pages = Number(item.pages);
+  if (Number.isInteger(Number(item.chars)) && Number(item.chars) > 0) document.chars = Number(item.chars);
+  if (text(item.textPath)) document.textPath = text(item.textPath);
   result.push(document);
  }
  return result;
@@ -280,6 +285,40 @@ function sanitizeCompetitors(value) {
   if (text(item.booth)) competitor.booth = text(item.booth);
   if (normalizeHttpUrl(item.sourceUrl)) competitor.sourceUrl = normalizeHttpUrl(item.sourceUrl);
   result.push(competitor);
+ }
+ return result;
+}
+
+// OCR / parsed material list. Each item points at a parsed text file under
+// .local/documents and carries provenance; the full text never goes into the
+// event JSON. `materialsReport` is the agent's human-readable summary.
+function sanitizeMaterials(value, stamp) {
+ if (!Array.isArray(value)) return [];
+ const result = [];
+ const seen = new Set();
+ for (const item of value) {
+  if (!item || typeof item !== 'object') continue;
+  const url = normalizeHttpUrl(item.url);
+  const textPath = text(item.textPath);
+  if (!url && !textPath) continue;
+  const key = (url || textPath) + '|' + (text(item.kind) || 'document');
+  if (seen.has(key)) continue;
+  seen.add(key);
+  const material = {
+   id: text(item.id) || randomUUID(),
+   url: url || '',
+   title: text(item.title) || (url || textPath),
+   kind: item.kind === 'webpage' ? 'webpage' : 'document',
+   provider: text(item.provider) || 'vision-ocr',
+   engine: text(item.engine) || '',
+   pages: Number.isInteger(Number(item.pages)) && Number(item.pages) > 0 ? Number(item.pages) : null,
+   chars: Number.isInteger(Number(item.chars)) && Number(item.chars) > 0 ? Number(item.chars) : null,
+   textPath,
+   summary: text(item.summary),
+   agentSummary: text(item.agentSummary),
+   createdAt: isoOr(item.createdAt, stamp),
+  };
+  result.push(material);
  }
  return result;
 }
@@ -319,6 +358,10 @@ function sanitizeCandidate(input, stamp) {
  if (input.documents !== undefined) {
   const documents = sanitizeDocuments(input.documents, stamp);
   if (documents.length) result.documents = documents;
+ }
+ if (input.materials !== undefined) {
+  const materials = sanitizeMaterials(input.materials, stamp);
+  if (materials.length) result.materials = materials;
  }
  if (input.competitors !== undefined) {
   const competitors = sanitizeCompetitors(input.competitors);
@@ -360,6 +403,32 @@ function mergeDocuments(existing, incoming, stamp) {
   if (!current.type && document.type) current.type = document.type;
   if (document.parseProvider && !current.parseProvider) current.parseProvider = document.parseProvider;
   if (document.parsedAt && !current.parsedAt) current.parsedAt = document.parsedAt;
+  if (document.pages && !current.pages) current.pages = document.pages;
+  if (document.chars && !current.chars) current.chars = document.chars;
+  if (document.textPath && !current.textPath) current.textPath = document.textPath;
+ }
+ return result;
+}
+
+function mergeMaterials(existing, incoming, stamp) {
+ const result = (existing ?? []).map(material => ({...material}));
+ const byKey = new Map(result.map(material => [(material.url || material.textPath) + '|' + material.kind, material]));
+ for (const material of incoming) {
+  const key = (material.url || material.textPath) + '|' + material.kind;
+  const current = byKey.get(key);
+  if (!current) {
+   result.push({...material});
+   continue;
+  }
+  // Parsed metadata can arrive later than the initial OCR material entry.
+  if (material.provider) current.provider = material.provider;
+  if (material.engine) current.engine = material.engine;
+  if (material.pages) current.pages = material.pages;
+  if (material.chars) current.chars = material.chars;
+  if (material.textPath) current.textPath = material.textPath;
+  if (material.summary) current.summary = material.summary;
+  if (material.agentSummary) current.agentSummary = material.agentSummary;
+  if (!current.title && material.title) current.title = material.title;
  }
  return result;
 }
@@ -444,6 +513,7 @@ function mergeEvent(existing, incoming, stamp) {
  if (incoming.notes?.length) merged.notes = uniqueStrings([...(merged.notes ?? []), ...incoming.notes]);
  if (incoming.sources?.length) merged.sources = mergeSources(merged.sources, incoming.sources, stamp);
  if (incoming.documents?.length) merged.documents = mergeDocuments(merged.documents, incoming.documents, stamp);
+ if (incoming.materials?.length) merged.materials = mergeMaterials(merged.materials, incoming.materials, stamp);
  if (incoming.competitors?.length) merged.competitors = mergeCompetitors(merged.competitors, incoming.competitors);
  if (incoming.exhibitorListStatus && incoming.exhibitorListStatus !== 'unknown') merged.exhibitorListStatus = incoming.exhibitorListStatus;
  if (incoming.region) merged.region = incoming.region;
@@ -524,9 +594,21 @@ function patchDocuments(value, stamp) {
   };
   if (item.parseProvider) document.parseProvider = text(item.parseProvider);
   if (item.parsedAt) document.parsedAt = isoOr(item.parsedAt, stamp);
+  if (Number.isInteger(Number(item.pages)) && Number(item.pages) > 0) document.pages = Number(item.pages);
+  if (Number.isInteger(Number(item.chars)) && Number(item.chars) > 0) document.chars = Number(item.chars);
+  if (text(item.textPath)) document.textPath = text(item.textPath);
   result.push(document);
  }
  return result;
+}
+
+function patchMaterials(value, stamp) {
+ if (!Array.isArray(value)) throw invalid('Field materials must be an array', 'INVALID_FIELD');
+ const materials = sanitizeMaterials(value, stamp);
+ if (materials.length !== value.filter(item => item && typeof item === 'object').length) {
+  throw invalid('Every material must have a source URL or a parsed text path', 'INVALID_FIELD');
+ }
+ return materials;
 }
 
 function patchCompetitors(value) {
@@ -660,6 +742,8 @@ export function openEventStore({file, now = () => Date.now()} = {}) {
     next[field] = patchSources(value, stamp);
    } else if (field === 'documents') {
     next[field] = patchDocuments(value, stamp);
+   } else if (field === 'materials') {
+    next[field] = patchMaterials(value, stamp);
    } else if (field === 'competitors') {
     next[field] = patchCompetitors(value);
    } else if (ENUM_FIELDS[field]) {

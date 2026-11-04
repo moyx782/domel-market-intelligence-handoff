@@ -99,8 +99,20 @@ export function patchEvent(id: string, changes: Partial<MarketEvent>): Promise<M
  return request('/api/v1/events/' + encodeURIComponent(id), 'PATCH', changes);
 }
 
-export function parseEventDocument(id: string, url: string): Promise<{ok: boolean; status?: Availability; error?: string}> {
+export function parseEventDocument(id: string, url: string): Promise<{taskId: string; task: unknown}> {
  return request('/api/v1/events/' + encodeURIComponent(id) + '/parse', 'POST', {url});
+}
+
+export function requestAgentReport(id: string): Promise<{taskId: string; task: unknown}> {
+ return request('/api/v1/events/' + encodeURIComponent(id) + '/agent-report', 'POST', {});
+}
+
+export function getOcrStatus(): Promise<{configured: boolean; provider: string; vision?: {configured: boolean; model?: string | null}; tools?: Record<string, boolean>}> {
+ return request('/api/v1/ocr/status');
+}
+
+export function getMaterialText(eventId: string, materialId: string): Promise<{material: {id: string; title: string}; text: string}> {
+ return request('/api/v1/events/' + encodeURIComponent(eventId) + '/materials/' + encodeURIComponent(materialId) + '/text');
 }
 
 export async function exportEvents(format: EventExportFormat): Promise<void> {

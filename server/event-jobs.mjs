@@ -515,6 +515,7 @@ export function createEventJobs({
  getRecipe = null,
  queries = null,
  company = null,
+ materialStore = null,
 } = {}) {
  if (!eventStore) throw Error('createEventJobs requires an event store');
 
@@ -859,6 +860,7 @@ function candidateUrls(event) {
   const conflicts = [];
   const documents = new Map();
   const collectedSources = [];
+  const collectedMaterials = [];
   let exhibitorListUrl = '';
   let exhibitorListStatus = 'unknown';
   let structured = false;
@@ -897,6 +899,26 @@ function candidateUrls(event) {
     title: page.title || text(event.name),
     verifiedAt: isoNow(now()),
    });
+   // OCR-derived webpage text is a material: keep the full text under
+   // .local/documents so the agent can organise it into a report later.
+   if (materialStore && result.ocr) {
+    try {
+     const saved = materialStore.save({
+      eventId,
+      url: pageUrl,
+      title: page.title || text(event.name),
+      kind: 'webpage',
+      provider: result.ocr.provider || 'vision-ocr',
+      engine: result.engine,
+      pages: result.ocr.pages ?? null,
+      text: result.text,
+      summary: 'OCR 提取的网页文本（未人工核验）',
+     });
+     if (saved?.material) collectedMaterials.push(saved.material);
+    } catch (error) {
+     await note(`OCR 材料保存失败 ${pageUrl}: ${error instanceof Error ? error.message : String(error)}`, 'warn');
+    }
+   }
    for (const [field, value] of Object.entries(page.values)) {
     if (needsValue(value)) continue;
     if (needsValue(aggregate[field])) {
@@ -950,6 +972,13 @@ function candidateUrls(event) {
    .filter(source => source && !(event.sources ?? []).some(existing => existing.url === source.url));
   if (newSources.length) {
    changes.sources = [...(event.sources ?? []), ...newSources];
+  }
+  if (collectedMaterials.length) {
+   const existing = Array.isArray(event.materials) ? event.materials : [];
+   const byKey = new Map(existing.map(material => [(material.url || material.textPath) + '|' + material.kind, material]));
+   for (const material of collectedMaterials) byKey.set(material.url + '|' + material.kind, material);
+   changes.materials = [...byKey.values()];
+   fields.push('materials');
   }
   const existingDocuments = Array.isArray(event.documents) ? event.documents : [];
   const freshDocuments = [...documents.values()].filter(document => !existingDocuments.some(existing => existing.url === document.url));
@@ -1052,6 +1081,7 @@ function candidateUrls(event) {
    }
   }
   if (collected === 0) missing.push('未能采集官网或来源页面，待人工补充');
+  if (collectedMaterials.length) missing.push('OCR 材料 ' + collectedMaterials.length + ' 份，待 Agent 整理或人工核验');
 
   const hasStartDate = !needsValue(resolvedStart);
   let derivedConfidence;

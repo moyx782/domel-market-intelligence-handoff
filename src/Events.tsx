@@ -8,7 +8,7 @@ import {
  AlertCircle, Building2, CalendarDays, Check, ExternalLink, FileJson, FileSpreadsheet,
  LayoutList, LoaderCircle, MapPin, Pencil, Plus, RefreshCw, Search, X,
 } from 'lucide-react';
-import {discoverEvents, enrichEvent, exportEvents, getEvent, listEvents, patchEvent} from './api';
+import {discoverEvents, enrichEvent, exportEvents, getEvent, getMaterialText, listEvents, parseEventDocument, patchEvent, requestAgentReport} from './api';
 import type {EventFilter} from './api';
 import {locale, useI18n} from './i18n';
 import type {Lang} from './i18n';
@@ -233,7 +233,7 @@ function draftChanges(event: MarketEvent, draft: EditDraft): Partial<MarketEvent
  return changes;
 }
 
-function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, onPatch}: {
+function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, onPatch, onReload}: {
  event: MarketEvent;
  canWrite: boolean;
  enriching: boolean;
@@ -241,11 +241,16 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
  onClose: () => void;
  onEnrich: (event: MarketEvent) => void;
  onPatch: (changes: Partial<MarketEvent>) => Promise<boolean>;
+ onReload: () => void;
 }) {
  const {t, lang} = useI18n();
  const [editing, setEditing] = useState(false);
  const [draft, setDraft] = useState<EditDraft>(() => toDraft(event));
  const [formError, setFormError] = useState('');
+ const [ocrBusy, setOcrBusy] = useState('');
+ const [ocrError, setOcrError] = useState('');
+ const [ocrNotice, setOcrNotice] = useState('');
+ const [materialText, setMaterialText] = useState<Record<string, string>>({});
 
  // Selecting another event must never keep the previous event's edit form.
  useEffect(() => {
@@ -264,6 +269,47 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
  const value = completeness(event);
  const dated = hasDate(event.startDate);
  const notes = [...event.notes];
+
+ async function parseWithOcr(url: string) {
+  setOcrBusy('parse:' + url);
+  setOcrError('');
+  setOcrNotice('');
+  try {
+   await parseEventDocument(event.id, url);
+   setOcrNotice(t('OCR task queued. Refresh when it finishes.'));
+  } catch (cause) {
+   setOcrError(cause instanceof Error ? cause.message : String(cause));
+  } finally {
+   setOcrBusy('');
+  }
+ }
+
+ async function runAgentReport() {
+  setOcrBusy('report');
+  setOcrError('');
+  setOcrNotice('');
+  try {
+   await requestAgentReport(event.id);
+   setOcrNotice(t('Agent material report queued. Refresh when it finishes.'));
+  } catch (cause) {
+   setOcrError(cause instanceof Error ? cause.message : String(cause));
+  } finally {
+   setOcrBusy('');
+  }
+ }
+
+ async function openMaterialText(material: {id: string}) {
+  setOcrBusy('text:' + material.id);
+  setOcrError('');
+  try {
+   const payload = await getMaterialText(event.id, material.id);
+   setMaterialText(previous => ({...previous, [material.id]: payload.text}));
+  } catch (cause) {
+   setOcrError(cause instanceof Error ? cause.message : String(cause));
+  } finally {
+   setOcrBusy('');
+  }
+ }
 
  function update<K extends keyof EditDraft>(key: K, value: EditDraft[K]) {
   setDraft(previous => ({...previous, [key]: value}));
@@ -415,9 +461,41 @@ function EventDetail({event, canWrite, enriching, patching, onClose, onEnrich, o
          <span className="badge ev-badge doc-type">{document.type || t('File')}</span>
          <AvailabilityBadge availability={document.status}/>
          {document.parseProvider && <span className="ev-muted">{document.parseProvider}{document.parsedAt ? ' · ' + formatDateTime(document.parsedAt, lang) : ''}</span>}
+         {document.pages ? <span className="ev-muted">{t('{pages} pages', {pages: document.pages})}{document.chars ? ' · ' + t('{chars} chars', {chars: document.chars}) : ''}</span> : null}
         </span>
+        {canWrite && document.status === 'downloadable' && <button className="secondary ev-doc-action" disabled={Boolean(ocrBusy)} onClick={() => void parseWithOcr(document.url)}>{ocrBusy === 'parse:' + document.url ? t('Parsing…') : t('Parse with OCR')}</button>}
        </li>)}
       </ul>
+     </section>}
+
+     {(event.materials?.length > 0 || event.materialsReport) && <section className="ev-subsection">
+      <div className="ev-subsection-head">
+       <h3>{t('OCR materials')}</h3>
+       <div className="ev-subsection-actions">
+        {canWrite && <button className="secondary" disabled={Boolean(ocrBusy)} onClick={() => void runAgentReport()}>{ocrBusy === 'report' ? t('Queuing…') : t('Agent report')}</button>}
+        <button className="secondary" onClick={onReload}>{t('Refresh')}</button>
+       </div>
+      </div>
+      {ocrNotice && <p className="small" role="status">{ocrNotice}</p>}
+      {ocrError && <p className="small" role="alert">{ocrError}</p>}
+      {event.materials?.length > 0 && <ul className="ev-materials">
+       {event.materials.map(material => <li key={material.id}>
+        <div className="ev-material-head">
+         <strong>{material.title || material.url || t('OCR material')}</strong>
+         <span className="badge">{material.provider}</span>
+         {material.pages ? <span className="ev-muted">{t('{pages} pages', {pages: material.pages})}</span> : null}
+         {material.chars ? <span className="ev-muted">{t('{chars} chars', {chars: material.chars})}</span> : null}
+        </div>
+        {material.agentSummary && <p className="small">{material.agentSummary}</p>}
+        {material.summary && !material.agentSummary && <p className="small">{material.summary}</p>}
+        <div className="ev-material-actions">
+         {material.url && <ExternalTextLink url={material.url}>{t('Source')}</ExternalTextLink>}
+         {material.textPath && <button className="secondary" disabled={Boolean(ocrBusy)} onClick={() => void openMaterialText(material)}>{ocrBusy === 'text:' + material.id ? t('Loading…') : t('View OCR text')}</button>}
+        </div>
+        {materialText[material.id] && <details className="ev-material-text" open><summary>{t('OCR text')}</summary><pre>{materialText[material.id]}</pre></details>}
+       </li>)}
+      </ul>}
+      {event.materialsReport && <details className="ev-report" open><summary>{t('Agent material report')}</summary><pre>{event.materialsReport}</pre></details>}
      </section>}
 
      {notes.length > 0 && <section className="ev-subsection">
@@ -607,6 +685,17 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
   }
  }
 
+ async function reloadDetail() {
+  if (!detail) return;
+  try {
+   const fresh = await getEvent(detail.id);
+   setDetail(fresh);
+   setEvents(previous => previous ? previous.map(item => item.id === fresh.id ? fresh : item) : previous);
+  } catch (cause) {
+   setDetailError(cause instanceof Error ? cause.message : String(cause));
+  }
+ }
+
  async function handlePatch(id: string, changes: Partial<MarketEvent>): Promise<boolean> {
   setBusy('patch');
   setError('');
@@ -776,6 +865,7 @@ export default function Events({role, onOpenTasks, onOpenEvent}: {role: Role; on
     onClose={() => { setSelectedId(null); setDetail(null); setDetailError(''); }}
     onEnrich={event => void handleEnrich(event)}
     onPatch={changes => handlePatch(detail.id, changes)}
+    onReload={() => void reloadDetail()}
    />}
   </div>
  </div>;

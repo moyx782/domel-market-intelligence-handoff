@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import {
  addMcp, addPlugin, addSkill, deleteMcp, deletePlugin, deleteSkill,
- getAgentConfig, getRawMcp, listRecipes, replaceMcp, testMcp,
+ getAgentConfig, getOcrStatus, getRawMcp, listRecipes, replaceMcp, testMcp,
  updateAgentSettings, updateMcp, updatePlugin, updateSkill, updateRecipe,
 } from './api';
 import {useI18n} from './i18n';
@@ -49,6 +49,7 @@ export default function Settings({onRoleChanged}: {onRoleChanged?: () => void}) 
  const [notice, setNotice] = useState('');
  const [busy, setBusy] = useState('');
  const [loadError, setLoadError] = useState('');
+ const [ocrStatus, setOcrStatus] = useState<{configured: boolean; provider: string; vision?: {configured: boolean; model?: string | null}; mineru?: {provider: string; configured: boolean; baseUrl?: string | null; modelVersion?: string | null; tokenSet?: boolean}; tools?: Record<string, boolean>} | null>(null);
 
  // MCP
  const [rawJson, setRawJson] = useState('');
@@ -94,6 +95,7 @@ export default function Settings({onRoleChanged}: {onRoleChanged?: () => void}) 
     : (nextProvider === 'official' ? (next.ocr?.officialBase || 'https://mineru.net/api/v4') : ''));
    setLlmModel(next.llm?.model || '');
    setLlmBaseUrl(next.llm?.baseUrl || '');
+   void getOcrStatus().then(setOcrStatus).catch(() => setOcrStatus(null));
    setSkillDrafts(Object.fromEntries(next.skills.map(skill => [skill.id, {
     name: skill.name, description: skill.description, content: skill.content ?? '',
    }])));
@@ -518,6 +520,8 @@ export default function Settings({onRoleChanged}: {onRoleChanged?: () => void}) 
     </label>
    </div>
    <p className="small">{t('Choosing a provider fills its default endpoint; you can override it.')}</p>
+   {ocrStatus?.mineru?.configured && <p className="small" role="status">{t('MinerU token is configured in this browser/settings; parsing will use the MinerU {model} model (token is reused server-side and never shown again).', {model: ocrStatus.mineru.modelVersion || 'vlm'})}</p>}
+   {ocrStatus?.vision?.configured && <p className="small" role="status">{t('Vision model OCR is available and uses the current AI model ({model}). PDFs with a text layer use pdftotext; scanned PDFs and image-only pages are OCRed page by page.', {model: ocrStatus.vision.model || t('AI model')})}</p>}
    <p className="small">{t('Tokens are write-only: they can be replaced or cleared, but never displayed again.')}</p>
    {isAdmin && <div className="review-actions">
     <button className="primary" onClick={() => void saveOcr()} disabled={busy === 'ocr'}><Save size={16}/>{t('Save settings')}</button>

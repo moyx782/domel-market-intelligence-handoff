@@ -350,4 +350,21 @@ registerMessages({
  'Skip to main content': '跳到主要内容',
  'Your role can read this research but cannot run it.': '你的角色可以查看该研究，但不能运行它。',
  'Workspace failed to load. Check the local API and try again.': '工作区加载失败，请检查本地 API 后重试。',
+
+ // OCR materials + agent report
+ 'OCR materials': 'OCR 材料清单',
+ 'Parse with OCR': '使用 OCR 解析',
+ 'Parsing…': '解析中…',
+ 'Queuing…': '排队中…',
+ 'Agent report': 'Agent 整理并汇报',
+ 'OCR task queued. Refresh when it finishes.': 'OCR 任务已排队，完成后点「刷新」查看。',
+ 'Agent material report queued. Refresh when it finishes.': 'Agent 材料报告任务已排队，完成后点「刷新」查看。',
+ 'View OCR text': '查看 OCR 文本',
+ 'OCR text': 'OCR 文本',
+ 'Agent material report': 'Agent 材料报告',
+ 'OCR material': 'OCR 材料',
+ '{pages} pages': '{pages} 页',
+ '{chars} chars': '{chars} 字符',
+ 'Vision model OCR is available and uses the current AI model ({model}). PDFs with a text layer use pdftotext; scanned PDFs and image-only pages are OCRed page by page.': '视觉 OCR 可用，使用当前 AI 模型（{model}）；带文本层的 PDF 走 pdftotext，扫描件/纯图片页逐页 OCR。',
+ 'MinerU token is configured in this browser/settings; parsing will use the MinerU {model} model (token is reused server-side and never shown again).': 'MinerU Token 已在前端设置中配置；解析将使用 MinerU {model} 模型（Token 在服务端复用，不会再次回显）。',
 });

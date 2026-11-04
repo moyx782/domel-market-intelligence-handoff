@@ -38,6 +38,8 @@ export function mineruConfig(env = process.env, overrides = {}) {
   baseUrl,
   token,
   timeoutMs,
+  modelVersion: String(overrides.modelVersion ?? env.MINERU_MODEL_VERSION ?? 'vlm'),
+  language: String(overrides.language ?? env.MINERU_LANGUAGE ?? 'ch'),
   configured: provider === 'official' ? Boolean(token) : provider === 'local',
  };
 }
@@ -50,7 +52,8 @@ export function mineruStatus(env = process.env, overrides = {}) {
   configured: config.configured,
   baseUrl: config.provider === 'none' ? null : config.baseUrl,
   timeoutMs: config.timeoutMs,
-  policy: 'link-and-availability-first',
+  modelVersion: config.provider === 'none' ? null : config.modelVersion,
+  policy: 'ocr-then-agent',
  };
 }
 
@@ -67,8 +70,5 @@ export function documentAvailability(url) {
 }
 }
 
-// Reserved adapter contract for the parsing phase. It fails closed so a caller
-// can never believe a document was parsed when no provider is configured.
-export async function parseDocument() {
- throw Error('MinerU parsing is not enabled in this phase; configure a provider and enable it in a later milestone.');
-}
+// Real MinerU Standard API parsing (token from Settings or env).
+export {parseMineru as parseDocument} from './mineru-client.mjs';

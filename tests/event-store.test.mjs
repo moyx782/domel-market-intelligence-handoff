@@ -15,7 +15,7 @@ import {
 const MARKET_EVENT_FIELDS = [
  'id', 'name', 'edition', 'startDate', 'endDate', 'city', 'province', 'district', 'country', 'venue', 'organizer', 'website',
  'frequency', 'industries', 'scope', 'exhibitorCount', 'visitorCount', 'area', 'exhibitorListUrl',
- 'exhibitorListStatus', 'documents', 'competitors', 'applicationDeadline', 'boothPrice', 'ticketPrice',
+ 'exhibitorListStatus', 'documents', 'materials', 'materialsReport', 'competitors', 'applicationDeadline', 'boothPrice', 'ticketPrice',
  'region', 'sources', 'confidence', 'status', 'notes', 'createdAt', 'updatedAt',
 ];
 
@@ -52,6 +52,8 @@ test('upsert creates a complete MarketEvent with discovered defaults', () => {
   assert.equal(event.exhibitorListStatus, 'unknown');
   assert.deepEqual(event.industries, []);
   assert.deepEqual(event.documents, []);
+ assert.deepEqual(event.materials, []);
+ assert.equal(event.materialsReport, '');
   assert.deepEqual(event.competitors, []);
   assert.deepEqual(event.sources, []);
   assert.deepEqual(event.notes, []);

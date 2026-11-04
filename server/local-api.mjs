@@ -20,6 +20,8 @@ import {sourcePolicy} from '../supabase/functions/_shared/source-policy.mjs';
 import {extractionConfig} from '../supabase/functions/_shared/ai-extraction.mjs';
 import {validateScope} from '../supabase/functions/_shared/research-validation.mjs';
 import {createResearchRunner, extractionReady} from './research-runner.mjs';
+import {createOcr} from './ocr.mjs';
+import {openMaterialStore} from './materials.mjs';
 import {openTranscriptStore} from './transcripts.mjs';
 import {createTaskRunner} from './task-runner.mjs';
 
@@ -45,7 +47,7 @@ function csvCell(value) {
 export function localApiServer({
  store, assistant, agentStore, agentRuntime, transcripts, researchRunner, tasks,
  env = process.env, environment = 'local', origins = DEFAULT_ORIGINS,
- resolveAssistant, resolveAgent, getLlm, syncLlm,
+ resolveAssistant, resolveAgent, getLlm, syncLlm, ocr, materials,
 }) {
  const role = () => agentStore?.config().role ?? 'admin';
  const allowed = action => can(role(), action);
@@ -69,6 +71,16 @@ export function localApiServer({
  };
  const resolveAssistantNow = typeof resolveAssistant === 'function' ? resolveAssistant : async () => assistant;
  const resolveAgentNow = typeof resolveAgent === 'function' ? resolveAgent : async () => agentRuntime;
+ const ocrState = () => {
+  const mineru = mineruStatus(env, agentStore?.ocr());
+  const state = typeof ocr?.status === 'function' ? ocr.status() : null;
+  if (!state) return {...mineru, policy: 'ocr-then-agent'};
+  return {
+   ...state,
+   mineru: state.mineru ?? mineru,
+   policy: 'ocr-then-agent',
+  };
+ };
  const agentConfigPayload = () => {
   const publicConfig = agentStore.publicConfig();
   const llm = llmState();
@@ -158,7 +170,7 @@ export function localApiServer({
      agent: Boolean(await resolveAgentNow()),
      llm: {provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl, keySet: Boolean(llm.key)},
      agent_role: agentStore?.config().role ?? null,
-     ocr: mineruStatus(env, agentStore?.ocr()),
+     ocr: ocrState(),
      max_sources: 5,
      allowed_domains: policy.restrictedDomains,
      default_source_urls: policy.defaultSourceUrls,
@@ -171,7 +183,7 @@ export function localApiServer({
      } : {}),
     });
    }
-   if (path === '/api/v1/ocr/status' && req.method === 'GET') return send(200, mineruStatus(env, agentStore?.ocr()));
+   if (path === '/api/v1/ocr/status' && req.method === 'GET') return send(200, ocrState());
    if (path === '/api/v1/workspace' && req.method === 'GET') return send(200, await store.bundle());
    if (path === '/api/v1/research-tasks' && req.method === 'POST') {
     if (!allowed('business:write')) return deny('business:write');
@@ -360,15 +372,52 @@ export function localApiServer({
     if (!event) return send(404, {error: 'Event not found'});
     const document = (event.documents ?? []).find(item => item.url === body.url);
     if (!document) return send(404, {error: 'Document not found on this event'});
-    const ocr = mineruStatus(env, agentStore?.ocr());
-    if (!ocr.configured) return send(409, {error: 'Document parsing is not configured. Set an OCR provider in Settings.', ocr});
+    const status = ocrState();
+    if (!status.configured) return send(409, {error: 'OCR is not configured. Configure an AI model with image input or a MinerU provider.', ocr: status});
     if (document.status !== 'downloadable') {
      return send(409, {error: 'Document is not downloadable; only its link and availability are recorded.', availability: document.status});
     }
-    return send(501, {
-     error: 'Document parsing is defined but not enabled in this demo phase. The link and availability are already recorded.',
-     ocr,
+    if (!taskQueue()) return send(503, {error: 'Document parsing requires the durable task queue'});
+    const task = await taskQueue().create({
+     kind: 'document.parse',
+     eventId: eventParse[1],
+     priority: 2,
+     payload: {eventId: eventParse[1], url: document.url, title: document.title},
     });
+    return send(202, {task, taskId: task.id, taskState: task.state, document: {url: document.url, status: document.status}, ocr: status});
+   }
+
+   const agentReport = path.match(/^\/api\/v1\/events\/([0-9a-f-]{36})\/agent-report$/i);
+   if (agentReport && req.method === 'POST') {
+    if (!allowed('settings:manage')) return deny('settings:manage');
+    if (!hasEvents()) return send(503, {error: 'Event library is not available'});
+    const event = tasks.eventStore.get(agentReport[1]);
+    if (!event) return send(404, {error: 'Event not found'});
+    if (!(event.materials ?? []).length) return send(409, {error: 'No OCR materials to organise yet'});
+    if (!taskQueue()) return send(503, {error: 'Agent report requires the durable task queue'});
+    const runtime = await resolveAgentNow();
+    if (!runtime) return send(409, {error: 'Agent report requires a configured agent model (Settings → AI model)'});
+    try {
+     const task = await taskQueue().create({kind: 'event.agent-report', eventId: agentReport[1], priority: 2, payload: {eventId: agentReport[1], trigger: 'api'}});
+     return send(202, {task, taskId: task.id, taskState: task.state});
+    } catch (error) {
+     return send(409, {error: error instanceof Error ? error.message : 'Agent report is already queued'});
+    }
+   }
+
+   const materialText = path.match(/^\/api\/v1\/events\/([0-9a-f-]{36})\/materials\/([^/]+)\/text$/i);
+   if (materialText && req.method === 'GET') {
+    if (!hasEvents() || !materials) return send(503, {error: 'Material text is not available'});
+    const event = tasks.eventStore.get(materialText[1]);
+    if (!event) return send(404, {error: 'Event not found'});
+    const material = (event.materials ?? []).find(item => item.id === materialText[2]);
+    if (!material || !material.textPath) return send(404, {error: 'Material not found'});
+    try {
+     const text = materials.read(material.textPath);
+     return send(200, {material: {id: material.id, url: material.url, title: material.title, provider: material.provider, pages: material.pages, chars: material.chars}, text});
+    } catch {
+     return send(410, {error: 'Parsed text file is missing'});
+    }
    }
 
    // ---- Source registry (M3b) --------------------------------------------
@@ -648,6 +697,23 @@ export function localApiServer({
     if (body.llm !== undefined && typeof syncLlm === 'function') syncLlm();
     return send(200, {...updated, llm: agentConfigPayload().llm});
    }
+   if (path === '/api/v1/agent/fetch' && req.method === 'POST') {
+    if (!allowed('agent:chat')) return deny('agent:chat');
+    let target;
+    try { target = new URL(String(body.url ?? '')); } catch { return send(400, {error: 'Invalid public URL'}); }
+    if (!['http:', 'https:'].includes(target.protocol)) return send(400, {error: 'Only http(s) URLs can be fetched'});
+    if (!taskQueue()) return send(503, {error: 'Agent fetch requires the durable task queue'});
+    const runtime = await resolveAgentNow();
+    if (!runtime) return send(409, {error: 'Agent fetch requires a configured agent model (Settings → AI model)'});
+    const eventId = typeof body.eventId === 'string' ? body.eventId : '';
+    if (eventId && hasEvents() && !tasks.eventStore.get(eventId)) return send(404, {error: 'Event not found'});
+    try {
+     const task = await taskQueue().create({kind: 'agent.fetch', eventId: eventId || null, priority: 2, payload: {url: target.href, eventId: eventId || null, reason: 'api'}});
+     return send(202, {task, taskId: task.id, taskState: task.state});
+    } catch (error) {
+     return send(409, {error: error instanceof Error ? error.message : 'Agent fetch is already queued'});
+    }
+   }
    if (path === '/api/v1/agent/chat' && req.method === 'POST') {
     if (!allowed('agent:chat')) return deny('agent:chat');
     const chatRuntime = await resolveAgentNow();
@@ -756,6 +822,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
  // One queue for research, source collection and event jobs. The scheduler is
  // started together with the queue so due sources are picked up without a
  // separate worker process.
+ const materialsRoot = env.MATERIALS_ROOT || join(env.AGENT_DATA_DIR || '.local', 'documents');
+ const ocr = createOcr({env, getLlm: resolveLlm, getMineru: () => agentStore.ocr()});
+ const materials = openMaterialStore({root: materialsRoot});
  const tasks = createTaskRunner({
   store,
   env,
@@ -767,10 +836,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   agentStore,
   transcripts,
   tasks,
+  ocr,
   env,
   resolveAssistant: async () => (await resolveModels()).assistant,
   resolveAgent: async () => (await resolveModels()).agentRuntime,
   getLlm: resolveLlm,
+  ocr,
+  materials,
   syncLlm: () => {
    syncLlmEnv();
    modelCache = {signature: '', assistant: undefined, agentRuntime: undefined};

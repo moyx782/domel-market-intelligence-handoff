@@ -47,7 +47,21 @@ export type EventStatus = 'discovered' | 'enriched' | 'verified' | 'archived';
 export type Confidence = 'high' | 'medium' | 'low';
 export type Availability = 'linked' | 'downloadable' | 'restricted' | 'unknown';
 export type EventRegion = 'cn' | 'eu' | 'global';
-export type EventDocument = {url:string;title?:string;type:string;status:Availability;parseProvider?:string;parsedAt?:string};
+export type EventDocument = {url:string;title?:string;type:string;status:Availability;parseProvider?:string;parsedAt?:string;pages?:number;chars?:number;textPath?:string};
+export type EventMaterial = {
+ id:string;
+ url:string;
+ title:string;
+ kind:'document'|'webpage';
+ provider:string;
+ engine?:string;
+ pages?:number|null;
+ chars?:number|null;
+ textPath?:string;
+ summary?:string;
+ agentSummary?:string;
+ createdAt:string;
+};
 export type EventCompetitor = {name:string;participating:boolean|null;booth?:string;sourceUrl?:string};
 export type EventSourceRef = {url:string;title:string;verifiedAt:string};
 export type MarketEvent = {
@@ -72,6 +86,8 @@ export type MarketEvent = {
  exhibitorListUrl:string;
  exhibitorListStatus:Availability;
  documents:EventDocument[];
+ materials:EventMaterial[];
+ materialsReport:string;
  competitors:EventCompetitor[];
  applicationDeadline:string|null;
  boothPrice:string;

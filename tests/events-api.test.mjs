@@ -99,9 +99,10 @@ test('event discovery, enrichment and document parsing interfaces', async () => 
   // admin API is the place where the token is written.
   ctx.agentStore.setSettings({ocr: {provider: 'official', officialBase: 'https://mineru.net/api/v4', token: 'secret-token'}});
   const parse = await json(ctx.url + '/api/v1/events/' + EVENT_A + '/parse', {method: 'POST', body: JSON.stringify({url: 'https://expo.example/list.pdf'})});
-  assert.equal(parse.status, 501);
+  assert.equal(parse.status, 202);
   const payload = await parse.json();
-  assert.match(payload.error, /not enabled in this demo phase/);
+  assert.equal(payload.task.kind, 'document.parse');
+  assert.equal(payload.task.eventId, EVENT_A);
   assert.equal(payload.ocr.provider, 'official');
   assert.ok(!JSON.stringify(payload).includes('secret-token'));
  } finally {

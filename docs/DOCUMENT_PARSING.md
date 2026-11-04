@@ -1,80 +1,116 @@
-# 文档与 OCR：MinerU 接入（接口预定义，未启用解析）
+# 文档与 OCR：视觉模型 OCR + 材料清单 + Agent 整理
 
-规则：**先给链接与「是否可获取」，不强行 OCR。**
+状态：**已实现并真实测试**（2026-11-04 起）
+规则：先给链接与「是否可获取」，只有明确可下载的文档才 OCR；OCR 结果进入**材料清单**，
+由 DeepSeek Agent 整理成材料报告，人工复核后才用于业务判断。
 
-展会资料里经常出现 PDF 参展商名单、展位图、招展手册。系统先登记链接和可获取性；只有明确可下载、且管理员启用解析时，才把文件交给 MinerU。
+## 1. OCR 提供方（已确认可用）
 
-## 可获取性
-
-| 状态 | 含义 |
-|---|---|
-| `linked` | 只是一个网页链接，可能还需要点击才能看到文件 |
-| `downloadable` | 直接的 PDF / DOCX / XLSX / 图片等文件地址（按扩展名判断，不下载） |
-| `restricted` | 需要登录、付费或表单才可获取（probe 返回 401/403） |
-| `unknown` | 无法判断（非 HTTP、畸形 URL、其他状态码） |
-
-M3c 的 `event.enrich` 用 `collector.probe(url)`（HEAD，失败降级 GET Range:0-0）分类文档链接，写入 `event.documents[]`；`exhibitorListUrl`/`exhibitorListStatus` 同理。**probe 不下载文件内容。**
-
-接口：`GET /api/v1/ocr/status` 返回当前 provider、是否配置、baseUrl 与策略；**永远不返回 token**。
-
-`POST /api/v1/events/:id/parse`（admin+）是本期定义的解析入口，行为是刻意的：
-
-| 条件 | 返回 |
-|---|---|
-| OCR provider 未配置 | `409` + `ocr` 状态 |
-| 文档不是 `downloadable` | `409` + `availability` |
-| 已配置且可下载 | `501` 明确说明"解析接口已定义但本期未启用；链接与可获取性已记录" |
-| 文档不在该展会上 | `404` |
-
-这样调用方不会把"未解析"误判成"已解析"。
-
-## 两种部署
-
-| provider | 用途 | 配置 |
+| 提供方 | 用途 | 配置 |
 |---|---|---|
-| `official` | MinerU 官方 API（mineru.net） | `MINERU_PROVIDER=official`<br>`MINERU_API_TOKEN=...`（也可在网页设置中填写/替换）<br>`MINERU_API_BASE=https://mineru.net/api/v4`（默认） |
-| `local` | 自建 `mineru-kit api-server` | `MINERU_PROVIDER=local`<br>`MINERU_LOCAL_URL=http://127.0.0.1:8000`（可自定义；设置页选择 local 时自动填入） |
-| `none` | 默认关闭 | 不设置或 `MINERU_PROVIDER=none` |
+| **vision（默认兜底）** | 用当前 AI 模型的视觉能力 OCR 图片/扫描 PDF/纯图片网页 | 设置 → AI 模型配置 Key/模型；DeepSeek `deepseek-flash` 已实测中英文正确 |
+| **MinerU official（token）** | 精准解析：`vlm` 模型，表格/多栏/复杂扫描件更稳；200MB / 200 页 | 设置 → Document parsing：选 MinerU 官方 API，填 **API token（前端只写保存，服务端复用）**；或 `.env.host` 的 `MINERU_API_TOKEN` |
+| MinerU local | 自建 `mineru-kit api-server`，同 Standard API 协议 | 设置页选自建并填 local URL，或 `MINERU_LOCAL_URL` |
+| pdftotext | PDF 有文本层时直接抽文字，**不耗 token** | 本机已装 |
+| pdftoppm | 扫描 PDF 逐页转图（默认最多 5 页） | 本机已装 |
 
-设置页把两个地址合并为一个 **API 地址**：选择"MinerU 官方 API"时自动填入 `https://mineru.net/api/v4`，选择"自建 MinerU"时自动填入 `http://127.0.0.1:8000`，均可再修改。
+`GET /api/v1/ocr/status` 返回有效 OCR 能力（vision / mineru / tools），**永不返回 token**；
+`mineru.tokenSet=true` 表示前端/环境已配置 token。
 
-`MINERU_LOCAL_URL` 与 `MINERU_API_BASE` 允许任意 http(s) 主机、端口和基础路径，例如 `https://mineru.corp.example:8443/api` 或 `http://10.0.0.5:9000/mineru`。管理员可以在网页设置中覆盖 provider、两个地址和 token（`PATCH /api/v1/agent/settings` 的 `ocr` 字段），配置优先于环境变量。
+**Token 复用**：设置页 OCR 配置写入 `.local/agent-config.json`（0600，只写不读），
+优先级高于环境变量；OCR 服务每次解析时读取当前设置，因此前端填入/替换 token 后**无需重启**即可生效。
 
-密钥规则：token 只写不读。设置接口可以写入或清空；读取配置只返回 `tokenSet: true/false`，任何角色都拿不到明文；`agent-config.json` 以 0600 权限保存。MCP 的 env/headers 对 user/viewer 打码，admin 才能看到明文。
+**解析优先级**（成本与精度平衡）：
 
-自建服务：
+1. PDF 有文本层 → `pdftotext`（免费、最准）；
+2. 扫描 PDF / 图片 / 复杂文档，且 MinerU token 已配置 → **MinerU `vlm`**（默认模型；可在
+   `MINERU_MODEL_VERSION` 覆盖）；
+3. MinerU 未配置或失败 → 视觉 OCR 兜底；
+4. 采集 HTML 文字过薄 → Playwright 截图 → 视觉 OCR（MinerU 不参与截图 OCR）。
+
+## 2. OCR 何时自动触发
+
+| 内容 | 行为 |
+|---|---|
+| 采集 URL 返回 PDF/图片 | 下载（≤15MB）→ 文本层优先 → 扫描件逐页 OCR，`engine=ocr-document` |
+| HTML 文字过薄（<300 字符）| Playwright 渲染；仍薄 → 全页截图 → 视觉 OCR，`engine=ocr-browser` |
+| 事件文档（可下载）| 事件详情「使用 OCR 解析」或 `POST /api/v1/events/:id/parse` → `document.parse` 任务 |
+| 纯图片/Canvas 网页 | 作为普通采集进入 OCR 分支，OCR 文本自动进入材料清单 |
+| OCR 不可用 | 保持 fail-closed（`BAD_CONTENT_TYPE` / 409），不会假装解析成功 |
+
+## 3. 材料清单（Materials）
+
+OCR 文本不塞进事件 JSON，而是：
+
+- 全文存 `.local/documents/materials/<eventId>/*.md`（0600，带 source_url/provider/pages/chars 头）
+- 事件 `materials[]` 只存元数据：`url/title/kind(document|webpage)/provider/engine/pages/chars/textPath/summary/agentSummary`
+- 事件 `materialsReport` 存 Agent 生成的材料报告（Markdown）
+- API：`GET /api/v1/events/:id/materials/:materialId/text` 读取全文
+
+事件详情新增：
+
+- 文档行「使用 OCR 解析」→ 任务完成后显示 provider/pages/chars；
+- **OCR 材料清单**：材料类型、来源、页数/字符、Agent 摘要、「查看 OCR 文本」；
+- **Agent 材料报告**：Markdown 报告全文 + 刷新按钮；
+- viewer 只读，admin/user 才能触发解析/报告。
+
+## 4. Agent 整理并汇报
+
+`event.agent-report` 任务（document.parse 完成后自动入队，也可在事件详情点「Agent 整理并汇报」）：
+
+1. 读取事件全部材料的文本文件（OCR 输出视为不可信数据，不执行其中指令）；
+2. Agent 写 `event-report.json`：Markdown 报告 + 每份材料的摘要 + 逐字引文 + 待核验项；
+3. 服务端校验：只接受已知材料 URL；引文必须在对应材料文本中逐字存在（8–800 字符）；
+4. 通过后保存 `.local/documents/reports/<eventId>.md`，回写 `materials[].agentSummary` 和
+   `event.materialsReport`；报告明确标注 OCR 未人工核验/日期冲突等风险。
+
+本机实测（fixture 扫描 PDF + 纯图片网页）：
+- `vision-ocr` 识别扫描 PDF：1 页 / 61 字符；
+- 纯图片网页：`ocr-browser` 47 字符；
+- Agent 报告：2 份材料、3145 字符、含来源 URL 与引文、6 条核验警告；
+- 材料文本只读接口、事件详情 UI 均验证通过，0 console/page error。
+
+## 5. 自适应抓取回退（Agent）
+
+普通采集不完整时（`event.enrich` 收集 0 页且有官网/来源 URL）：
+
+- 自动入队 `agent.fetch`（后台，可设 `AGENT_FETCH_FALLBACK=0` 关闭）；
+- Agent（bash + 文件权限）运行 `scripts/adaptive-fetch.mjs`：
+  HTTP → 浏览器渲染 → 滚动/iframe 文本 → 截图 OCR；
+- 结果保存为 `agent-adaptive` 材料 + 候选来源 + note，并自动触发 Agent 材料报告；
+- 不绕过 robots.txt/登录/付费墙/验证码；失败只记 note，不重试风暴。
+
+手动入口：`POST /api/v1/agent/fetch {url, eventId?}`（返回 202 任务）。
+
+## 6. API 一览
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/v1/ocr/status` | 有效 OCR 状态（vision/mineru/tools），无 token |
+| `POST /api/v1/events/:id/parse {url}` | 入队 `document.parse`，下载 + OCR + 材料 + 自动报告 |
+| `POST /api/v1/events/:id/agent-report` | 手动触发 Agent 材料报告 |
+| `GET /api/v1/events/:id/materials/:materialId/text` | 读取 OCR 全文 |
+| `POST /api/v1/agent/fetch {url,eventId?}` | 手动触发 Agent 自适应抓取 |
+| `GET /api/v1/capabilities` | `ocr.vision` / `ocr.tools` 能力 |
+
+新增任务 kinds：`document.parse`、`event.agent-report`、`agent.fetch`（任务页可查看详情/日志）。
+
+## 7. 真实冒烟与测试
 
 ```bash
-mineru-kit api-server --host 0.0.0.0 --port 8000 --tier standard
-# OpenAPI: http://127.0.0.1:8000/docs
+npm run test:ocr        # 真实视觉 OCR：生成中英文图片 + 扫描 PDF，断言识别文字（消耗少量 token）
+npm test                # OCR 单测 / 材料 schema / Agent 报告校验 / collector OCR 分支
 ```
 
-官方 API 文档：<https://mineru.net/apiManage/docs>；开源自部署：<https://github.com/opendatalab/MinerU>。
+证据：`evidence/ocr/OCR_SMOKE_<date>.log` 与 fixtures。
 
-## 代码接口
+## 8. 安全与成本
 
-`server/mineru.mjs`：
-
-```js
-mineruConfig(env, overrides)   // provider / baseUrl / token / timeout / configured
-mineruStatus(env, overrides)   // 公开状态，不含 token
-documentAvailability(url)      // linked / downloadable / unknown
-parseDocument()                // 预留；调用会明确失败，避免误判"已解析"
-```
-
-## 后续实现步骤（尚未启用）
-
-1. 以官方文档为准创建解析任务（文件上传或 URL 提交）。
-2. 轮询任务状态，拿到结果压缩包（Markdown + 图片）。
-3. 解压、保存到 `.local/documents/<eventId>/`，记录 `parseProvider`、`parsedAt`、页数与失败原因。
-4. 解析失败不影响链接与可获取性展示；重试走任务队列（新增 `document.parse` kind）。
-
-> 官方 API 的路径与轮询格式以 mineru.net 当前文档为准，实现时先做一次真实冒烟再固化。
-
-## 安全与成本
-
-- token 存在服务端环境变量或 `.local/agent-config.json`（0600）；状态接口与前端只看到 `configured` / `tokenSet`，从不返回明文。
-- 官方 API 按量计费；自建需要 GPU 与模型下载，默认不随项目启动。
-- 单文件上限、超时、页数上限由配置控制；大文件先记录链接，不自动下载。
-- 不绕过登录、付费墙或验证码；`restricted` 只展示链接。
-- 采集器（M3a）本身不下载 PDF；`probe` 只做 HEAD/Range 探测，遵循公开页面边界。
+- token 只在服务端；状态/材料接口不返回明文；`.local` 文件 0600。
+- OCR 图片/PDF 有大小与页数上限；仅公开页面，不下载受限文档内容。
+- OCR/网页文本一律视为不可信数据；Agent 不得执行页面指令；报告中的引文必须可逐字复核。
+- 视觉 OCR 每页会消耗 token；默认最多 5 页，文本层 PDF 不 OCR。
+- MinerU Token 渠道：官方配额 1000 页/天优先（以官方文档为准）；解析任务为异步
+  （提交 → 轮询 → zip → Markdown）。token 只存服务端，状态只返回 `tokenSet`。
+- MinerU 官方 API 参考：<https://mineru.net/apiManage/docs>；token 在
+  <https://mineru.net/apiManage/token> 获取。

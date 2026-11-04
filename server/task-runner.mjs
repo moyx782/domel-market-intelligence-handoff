@@ -20,6 +20,10 @@ import {buildDiscoveryQueries, createDeepSeekEventSearch, createRegistryScanSear
 import {createWebSearch} from './web-search.mjs';
 import {openGeoIndex} from './geo.mjs';
 import {runAgentResearch} from './agent-research.mjs';
+import {createOcr} from './ocr.mjs';
+import {openMaterialStore} from './materials.mjs';
+import {runAgentReport} from './agent-report.mjs';
+import {runAgentFetch} from './agent-fetch.mjs';
 
 const SOURCE_MIN_INTERVAL_MS = 30_000;
 
@@ -59,6 +63,8 @@ export function createTaskRunner({
  researchRunner: injectedResearch,
  getLlm,
  getAgentRuntime,
+ injectedOcr,
+ injectedMaterialStore,
  now = () => Date.now(),
 }) {
  const registry = injectedRegistry ?? openSourceRegistry({
@@ -67,7 +73,9 @@ export function createTaskRunner({
  });
  const recipes = injectedRecipes ?? openRecipeStore({file: env.RECIPES_FILE || join(dataDir, 'recipes.json')});
  const limiter = createRateLimiter({now, defaultIntervalMs: Number(env.DOMAIN_INTERVAL_MS || 5000) || 5000});
- const collector = injectedCollector ?? createCollector({limiter, now});
+ const ocr = injectedOcr ?? createOcr({env, getLlm});
+ const materials = injectedMaterialStore ?? openMaterialStore({root: env.MATERIALS_ROOT || join(dataDir, 'documents')});
+ const collector = injectedCollector ?? createCollector({limiter, now, ocr});
  const documents = injectedDocuments ?? openDocumentStore({file: env.DOCUMENTS_FILE || join(dataDir, 'documents.json')});
  const eventStore = injectedEventStore ?? openEventStore({file: env.EVENTS_FILE || join(dataDir, 'events.json')});
  const researchRunner = injectedResearch ?? createResearchRunner({store, env});
@@ -144,6 +152,7 @@ export function createTaskRunner({
   now,
   company,
   queries: (payload = {}) => buildDiscoveryQueries(company, {region: payload.region ?? 'cn', years: payload.years, limit: payload.queryLimit}),
+  materialStore: materials,
  });
 
  async function runQueuedResearch(ctx) {
@@ -262,12 +271,189 @@ export function createTaskRunner({
   }
  }
 
+ function mimeOfDownload(headers, url) {
+  const raw = String(headers?.get?.('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  if (raw) return raw;
+  const path = String(url || '').toLowerCase();
+  if (/\.pdf(?:$|[?#])/.test(path)) return 'application/pdf';
+  if (/\.(png|jpe?g|webp|tiff?)(?:$|[?#])/.test(path)) return 'image/' + (path.includes('png') ? 'png' : 'jpeg');
+  return 'application/octet-stream';
+ }
+
+ // Parse a downloadable event document with OCR and save it as a material.
+ async function parseDocumentTask(ctx) {
+  const eventId = String(ctx.task.eventId ?? ctx.task.payload?.eventId ?? '');
+  const url = String(ctx.task.payload?.url ?? '');
+  if (!eventId || !url) throw permanent('Document parse task is missing eventId/url');
+  const event = eventStore.get(eventId);
+  if (!event) throw permanent('Event not found');
+  const document = (event.documents ?? []).find(item => item.url === url);
+  if (!document) throw permanent('Document not found on this event');
+  if (document.status !== 'downloadable') throw permanent('Document is not downloadable');
+  if (!ocr?.configured) throw permanent('OCR is not configured');
+  ctx.update({progress: '下载文档：' + url});
+  let response;
+  try {
+   response = await fetch(url, {headers: {'user-agent': 'DomelMarketIntelligence/0.1 (+intranet demo)'}, signal: ctx.signal, redirect: 'follow'});
+  } catch (error) {
+   if (ctx.signal?.aborted) throw Error('Cancelled by user');
+   throw Error('Document download failed: ' + (error instanceof Error ? error.message : String(error)));
+  }
+  if (!response.ok) throw permanent('Document download failed (HTTP ' + response.status + ')');
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const maxBytes = Number(env.OCR_DOWNLOAD_MAX_BYTES || 15 * 1024 * 1024);
+  if (buffer.length > maxBytes) throw permanent('Document is too large for OCR (' + buffer.length + ' bytes)');
+  ctx.update({progress: 'OCR 解析中：' + (document.title || url)});
+  const extracted = await ocr.extract(buffer, {mime: mimeOfDownload(response.headers, url), url});
+  if (!extracted.text || extracted.text.length < 20) throw Error('OCR found no usable text');
+  const saved = materials.save({
+   eventId,
+   url,
+   title: document.title || url,
+   kind: 'document',
+   provider: extracted.provider,
+   engine: extracted.method,
+   pages: extracted.pages,
+   text: extracted.text,
+   summary: 'OCR 解析的文档文本（待人工核验）',
+  });
+  const existingMaterials = Array.isArray(event.materials) ? event.materials : [];
+  const nextMaterials = [...existingMaterials.filter(material => !(material.url === url && material.kind === 'document')), saved.material];
+  const nextDocuments = (event.documents ?? []).map(item => item.url === url
+   ? {...item, parseProvider: extracted.provider, parsedAt: new Date().toISOString(), pages: extracted.pages ?? null, chars: extracted.text.length, textPath: saved.path}
+   : item);
+  const note = 'OCR 材料已生成：' + (document.title || url) + '（' + extracted.provider + '，' + extracted.text.length + ' 字符）';
+  eventStore.patch(eventId, {
+   materials: nextMaterials,
+   documents: nextDocuments,
+   notes: [...(event.notes ?? []).filter(item => !String(item).startsWith('OCR 材料已生成：' + (document.title || url))), note],
+  });
+  let agentTaskId = '';
+  try {
+   const task = await queue.create({kind: 'event.agent-report', eventId, priority: 2, payload: {eventId, trigger: 'document.parse'}});
+   agentTaskId = task?.id ?? '';
+  } catch { /* an active report task already exists; not a parse failure */ }
+  return {eventId, url, chars: extracted.text.length, pages: extracted.pages ?? null, provider: extracted.provider, materialId: saved.material.id, agentTaskId};
+ }
+
+ // Let the agent turn OCR/parsed materials into a reviewable Markdown report.
+ async function runAgentReportTask(ctx) {
+  const eventId = String(ctx.task.eventId ?? ctx.task.payload?.eventId ?? '');
+  if (!eventId) throw permanent('Agent report task is missing eventId');
+  const event = eventStore.get(eventId);
+  if (!event) throw permanent('Event not found');
+  const list = (event.materials ?? []).filter(material => material.textPath);
+  if (!list.length) throw permanent('No OCR materials to organise');
+  if (typeof getAgentRuntime !== 'function') throw permanent('Agent report requires the agent runtime');
+  const agentRuntime = await getAgentRuntime();
+  if (typeof agentRuntime !== 'function') throw permanent('Agent model is not configured');
+  const workspaceKey = ('agent-report-' + eventId).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const workspace = join(env.AGENT_WORKSPACE_ROOT || '.local/workspaces', workspaceKey);
+  const reportMaterials = list.map(material => {
+   let excerpt = '';
+   try { excerpt = materials.read(material.textPath); } catch { excerpt = ''; }
+   return {...material, excerpt};
+  });
+  ctx.update({progress: 'Agent 整理 OCR 材料（' + reportMaterials.length + ' 份）'});
+  const result = await runAgentReport({
+   agentRuntime,
+   event,
+   materials: reportMaterials,
+   workspace,
+   projectId: workspaceKey,
+   readText: textPath => materials.read(textPath),
+   signal: ctx.signal,
+   onEvent: event => { if (event?.type === 'tool_start') void ctx.update({progress: 'Agent: ' + event.tool}); },
+  });
+  materials.saveReport(eventId, result.reportMarkdown);
+  const summaries = new Map(result.materials.map(item => [item.url, item.summary]));
+  const nextMaterials = (event.materials ?? []).map(material => summaries.has(material.url) ? {...material, agentSummary: summaries.get(material.url)} : material);
+  const note = 'Agent 已整理 OCR 材料：' + reportMaterials.length + ' 份';
+  eventStore.patch(eventId, {
+   materials: nextMaterials,
+   materialsReport: result.reportMarkdown,
+   notes: [...(event.notes ?? []).filter(item => !String(item).startsWith('Agent 已整理 OCR 材料：')), note],
+  });
+  ctx.update({progress: '材料报告已生成'});
+  return {eventId, materials: reportMaterials.length, reportChars: result.reportMarkdown.length, reportPath: materials.reportPath(eventId), warnings: result.warnings};
+ }
+
+ async function runAgentFetchTask(ctx) {
+  const url = String(ctx.task.payload?.url ?? '');
+  const eventId = String(ctx.task.eventId ?? ctx.task.payload?.eventId ?? '');
+  if (!/^https?:\/\//i.test(url)) throw permanent('Agent fetch task has no public URL');
+  if (typeof getAgentRuntime !== 'function') throw permanent('Agent fetch requires the agent runtime');
+  const agentRuntime = await getAgentRuntime();
+  if (typeof agentRuntime !== 'function') throw permanent('Agent model is not configured');
+  const event = eventId ? eventStore.get(eventId) : null;
+  const workspaceKey = ('agent-fetch-' + String(ctx.task.id || eventId || Date.now())).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const workspace = join(env.AGENT_WORKSPACE_ROOT || '.local/workspaces', workspaceKey);
+  const helperPath = join(env.REPO_ROOT || process.cwd(), 'scripts', 'adaptive-fetch.mjs');
+  ctx.update({progress: 'Agent 自适应抓取：' + url});
+  const result = await runAgentFetch({
+   agentRuntime,
+   url,
+   eventName: event?.name ?? '',
+   workspace,
+   projectId: workspaceKey,
+   helperPath,
+   signal: ctx.signal,
+   onEvent: event => { if (event?.type === 'tool_start') void ctx.update({progress: 'Agent: ' + event.tool}); },
+  });
+  const saved = materials.save({
+   eventId: eventId || 'agent-fetch',
+   url,
+   title: result.title || url,
+   kind: 'webpage',
+   provider: 'agent-adaptive',
+   engine: result.engine,
+   text: result.text,
+   summary: 'Agent 自适应抓取（未人工核验）',
+  });
+  if (event) {
+   const existing = Array.isArray(event.materials) ? event.materials : [];
+   const next = [...existing.filter(material => !(material.url === url && material.kind === 'webpage')), saved.material];
+   const source = {url, title: result.title || url, verifiedAt: new Date().toISOString()};
+   const sources = [...(event.sources ?? []).filter(item => item.url !== url), source];
+   const note = 'Agent 自适应抓取完成：' + url + '（' + result.engine + '，' + result.text.length + ' 字符）';
+   eventStore.patch(eventId, {materials: next, sources, notes: [...(event.notes ?? []).filter(item => !String(item).startsWith('Agent 自适应抓取完成：' + url)), note]});
+   // A fetched material can immediately go through the same report step.
+   try { await queue.create({kind: 'event.agent-report', eventId, priority: 2, payload: {eventId, trigger: 'agent.fetch'}}); } catch { /* report already active */ }
+  }
+  return {url, eventId, chars: result.text.length, engine: result.engine, materialId: saved.material.id, strategies: result.strategies};
+ }
+
+ const eventEnrichHandler = eventJobs['event.enrich'];
+ async function runEnrichWithAgentFallback(ctx) {
+  const result = await eventEnrichHandler(ctx);
+  try {
+   const eventId = String(result?.eventId ?? ctx.task.eventId ?? '');
+   if ((result?.collected ?? 0) === 0 && eventId && env.AGENT_FETCH_FALLBACK !== '0' && typeof getAgentRuntime === 'function') {
+    const event = eventStore.get(eventId);
+    const url = event?.website || event?.sources?.[0]?.url;
+    if (url && /^https?:\/\//i.test(url)) {
+     const runtime = await getAgentRuntime();
+     if (typeof runtime === 'function') {
+      const task = await queue.create({kind: 'agent.fetch', eventId, priority: 2, payload: {eventId, url, reason: 'enrich-incomplete'}});
+      result.agentFetchTaskId = task.id;
+      if (typeof ctx.log === 'function') await ctx.log('info', '普通采集不完整，已转 Agent 自适应抓取：' + url);
+     }
+    }
+   }
+  } catch { /* the automatic fallback is best effort */ }
+  return result;
+ }
+
  const handlers = {
   'project.research': runQueuedResearch,
   'project.extract': runQueuedResearch,
   'project.agent-research': runAgentResearchTask,
   'source.collect': collectSource,
+  'document.parse': parseDocumentTask,
+  'event.agent-report': runAgentReportTask,
+  'agent.fetch': runAgentFetchTask,
   ...eventJobs,
+  'event.enrich': runEnrichWithAgentFallback,
  };
 
  const queue = openTaskQueue({
@@ -290,6 +476,8 @@ export function createTaskRunner({
   scheduler,
   registry,
   collector,
+  ocr,
+  materials,
   recipes,
   documents,
   eventStore,
