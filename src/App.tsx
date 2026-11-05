@@ -1,3 +1,4 @@
+import ExhibitionStudy from './ExhibitionStudy';
 import NewAgentResearch from './NewAgentResearch';
 import HostQueue from './HostQueue';
 import Tasks from './Tasks';
@@ -15,7 +16,7 @@ import LanguageSwitch from './LanguageSwitch';
 import {locale,useI18n} from './i18n';
 import {translateNotice} from './notices';
 import type {Bundle,Project,Finding,Decision,Report,Source,Audit,Role} from './types';
-type Page='events'|'tasks'|'sources'|'agent'|'dashboard'|'new'|'progress'|'insights'|'evidence'|'report'|'settings';
+type Page='exhibition-study'|'events'|'tasks'|'sources'|'agent'|'dashboard'|'new'|'progress'|'insights'|'evidence'|'report'|'settings';
 const empty:Bundle={projects:[],sources:[],findings:[],audits:[],reports:[]};
 const labels:Record<string,string>={draft:'Draft',running:'Researching',completed:'Review required',partial:'Partial coverage',failed:'Failed',pending:'Pending review',accepted:'Accepted',rejected:'Rejected'};
 export default function App(){
@@ -58,7 +59,7 @@ export default function App(){
  useEffect(()=>{setText(finding?.edited_text||'');},[fid,finding?.revision]);
  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),5000);return()=>clearTimeout(t);},[notice]);
  useEffect(()=>{
-  const titles:Record<Page,string>={events:'Event calendar',tasks:'Task queue',sources:'Sources',dashboard:'Research dashboard',agent:'Agent',settings:'Settings',new:'New research',progress:'Research progress',insights:'Insights & evidence',evidence:'Evidence review',report:'Comparison & report'};
+  const titles:Record<Page,string>={'exhibition-study':'Exhibition capture',events:'Event calendar',tasks:'Task queue',sources:'Sources',dashboard:'Research dashboard',agent:'Agent',settings:'Settings',new:'New research',progress:'Research progress',insights:'Insights & evidence',evidence:'Evidence review',report:'Comparison & report'};
   const projectPages:Page[]=['progress','insights','evidence','report'];
   const suffix=projectPages.includes(page)&&project?.title?' · '+project.title:'';
   document.title=t(titles[page])+suffix+' · Domel Market Intelligence';
@@ -81,12 +82,13 @@ export default function App(){
   document.addEventListener('keydown',onKey);
   return()=>{document.removeEventListener('keydown',onKey);if(previous instanceof HTMLElement)previous.focus();};
  },[help]);
- const nav=[{page:'events' as Page,label:t('Events'),icon:CalendarDays},{page:'tasks' as Page,label:t('Tasks'),icon:ListChecks},{page:'sources' as Page,label:t('Sources'),icon:Globe},{page:'dashboard' as Page,label:t('Projects'),icon:LayoutDashboard},{page:'agent' as Page,label:t('Agent'),icon:Bot},{page:'settings' as Page,label:t('Settings'),icon:Settings2}];
+ const nav=[{page:'exhibition-study' as Page,label:t('Exhibition capture'),icon:ListChecks},{page:'events' as Page,label:t('Events'),icon:CalendarDays},{page:'tasks' as Page,label:t('Tasks'),icon:ListChecks},{page:'sources' as Page,label:t('Sources'),icon:Globe},{page:'dashboard' as Page,label:t('Projects'),icon:LayoutDashboard},{page:'agent' as Page,label:t('Agent'),icon:Bot},{page:'settings' as Page,label:t('Settings'),icon:Settings2}];
  const badge=(s:string)=><span className={'badge '+s}>{t(labels[s]||s)}</span>;
  const message=error?<div role="alert" className="alert error"><AlertCircle size={18}/>{t(error)}{loadFailed&&<button className="secondary" onClick={()=>action(async()=>{setLoadFailed(false);await refresh();})}>{t('Retry')}</button>}<button aria-label={t('Dismiss error')} onClick={()=>setError('')}><X size={16}/></button></div>:null;
  if(boot)return <div className="boot"><LoaderCircle className="spin"/> Loading workspace…</div>;
  if(!usesLocalBackend&&(!actor||passwordSetup))return <AuthPanel setup={passwordSetup} authenticated={!!actor&&!demo} onDone={()=>setPasswordSetup(false)} onDemo={()=>{sessionStorage.setItem('domel.demo','true');setDemo(true);}}/>;
  return <div className="app"><a className="skip-link" href="#main-content">{t('Skip to main content')}</a>{mobile&&<button className="nav-backdrop" aria-label={t('Close navigation')} onClick={()=>setMobile(false)}/>}<aside id="app-sidebar" className={mobile?'sidebar open':'sidebar'}><Brand/><button className="mobile-close" aria-label={t('Close navigation')} onClick={()=>setMobile(false)}><X size={18}/></button><div className="workspace"><span className="workspace-mark">D</span><div>{t('Strategy workspace')}<small>{t('Domel · Suzhou')}</small></div></div><div className="nav-label">{t('WORKSPACE')}</div><nav>{nav.map(n=>{const active=page===n.page||(n.page==='insights'&&page==='evidence');return <button key={n.page} aria-current={active?'page':undefined} className={active?'active':''} onClick={()=>go(n.page)}><n.icon size={18}/>{n.label}{n.page==='new'&&<Plus className="nav-end" size={15}/>}</button>;})}</nav><div className="sidebar-note"><ShieldCheck size={20}/><strong>{t('Evidence comes first.')}</strong><p>{t('AI suggests. You review.')}<br/>{t('Only approved findings enter reports.')}</p></div><div className="side-bottom"><button onClick={()=>setHelp(true)}><BookOpen size={18}/> {t('Workflow guide')}</button>{!usesLocalBackend&&<button onClick={()=>action(async()=>{sessionStorage.removeItem('domel.demo');if(!demo)await supabase!.auth.signOut();setDemo(false);setActor('');setBundle(empty);setPid('');go('dashboard');})}><LogOut size={18}/>{demo?t('Exit demo'):t('Sign out')}</button>}<div className="profile"><span className="avatar">{demo?'DM':email.slice(0,2).toUpperCase()||'ME'}</span><div>{usesLocalBackend?t('Local workspace'):demo?t('Demo workspace'):t('Personal workspace')}<small>{usesLocalBackend?t('Single-user demo'):demo?t('Illustrative data'):t('Authenticated account')}</small></div><span className="online"/></div></div></aside><div className="main"><header><button className="mobile-toggle" aria-label={t('Open navigation')} aria-expanded={mobile} aria-controls="app-sidebar" onClick={()=>setMobile(!mobile)}><Menu/></button><div className="breadcrumb">{t('Workspace')} <ChevronRight size={14}/> <span>{page==='events'?t('Events'):page==='tasks'?t('Tasks'):page==='sources'?t('Sources'):page==='agent'?t('Agent'):page==='dashboard'?t('Projects'):page==='settings'?t('Settings'):project?.title||t('Select a project')}</span></div><LanguageSwitch/><span className="mode"><span/>{usesLocalBackend?t('LOCAL DEMO'):demo?t('DEMO MODE'):t('LIVE WORKSPACE')}</span><span className="header-date">{date(new Date().toISOString())}</span></header>{demo&&<div className="demo-banner"><FlaskConical size={16}/><strong>{t('Interactive demo')}</strong><span>{t('Illustrative findings. No web retrieval, live AI or real authentication.')}</span></div>}<main id="main-content" tabIndex={-1}>{message}{notice&&<div role="status" className="alert success"><Check size={18}/>{t(notice)}</div>}
+ {page==='exhibition-study'&&<ExhibitionStudy role={role as Role} onProject={id=>{void action(async()=>{await refresh();go('insights',id);});}}/>}
  {page==='events'&&<Events role={role as Role} onOpenTasks={()=>go('tasks')}/>}
  {page==='tasks'&&<Tasks role={role as Role}/>}
  {page==='sources'&&<Sources role={role as Role}/>}
@@ -113,4 +115,5 @@ function ReviewExport({project,finding,source,audits,demo}:{project:Project;find
  const payload=JSON.stringify({kind:'evidence-review-record',exported_at:new Date().toISOString(),mode:demo?'illustrative-demo':'live-workspace',project:{id:project.id,title:project.title,question:project.question,quarter:project.quarter,market:project.market},finding,source,audits,quote_matches_source:!!source?.text.includes(finding.quote),limitations:['An exact quote match does not prove that the finding is correct.','Review scope, dates and context before approval.']},null,2);
  return <div><button className="secondary" onClick={()=>setOpen(!open)} aria-expanded={open}>{t('View / export review evidence')}</button>{open&&<><button className="secondary" onClick={()=>{const u=URL.createObjectURL(new Blob([payload],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download='domel-review-'+finding.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}}>{t('Download JSON')}</button><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{payload}</pre></>}</div>;
 }
+
 

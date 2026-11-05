@@ -18,7 +18,7 @@ import {existsSync} from 'node:fs';
 import {applyRecipe} from './recipes.mjs';
 
 const DEFAULT_USER_AGENT = 'DomelMarketIntelligence/0.1 (+intranet demo)';
-const DEFAULT_CHROME_PATH = '/usr/bin/google-chrome';
+const DEFAULT_CHROME_PATH = process.platform==='win32' ? ['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(existsSync)||'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/usr/bin/google-chrome';
 const HTML_MIME_TYPES = new Set(['text/html', 'application/xhtml+xml']);
 const OCR_MIME_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/tiff', 'image/tif']);
 const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
@@ -967,7 +967,7 @@ export function createCollector({
   }
  }
 
- async function collectOnce(inputUrl, {signal, allowPlaywright = true, recipe} = {}) {
+ async function collectOnce(inputUrl, {signal, allowPlaywright = true, recipe, captureArtifacts = false} = {}) {
   let robots = {allowed: true, crawlDelayMs: 0};
   let parsed;
   try {
@@ -1009,7 +1009,9 @@ export function createCollector({
 
    const page = await fetchPage(requestUrl, {signal});
    if (page.kind === 'document') {
+    const rawDocument=message=>({ok:true,url:requestUrl,finalUrl:page.finalUrl,status:page.status,engine:'document-unparsed',title:page.finalUrl,text:'',html:'',contentType:page.contentType,bytes:page.bytes,fetchedAt:isoNow(),robots,artifact:{buffer:page.buffer,mime:page.mime},extractionGap:message});
     if (!ocr || typeof ocr.extract !== 'function' || !ocr.configured) {
+     if(captureArtifacts)return rawDocument('OCR not configured');
      throw collectorError('BAD_CONTENT_TYPE', 'Received "' + String(page.contentType ?? 'document') + '" but OCR is not configured for ' + requestUrl, {
       permanent: true,
       status: page.status,
@@ -1038,8 +1040,10 @@ export function createCollector({
       fetchedAt: isoNow(),
       robots,
       ocr: {provider: extracted.provider, pages: extracted.pages, method: extracted.method},
+      ...(captureArtifacts?{artifact:{buffer:page.buffer,mime:page.mime}}:{}),
      };
     } catch (error) {
+     if(captureArtifacts)return rawDocument('OCR failed: '+messageOf(error));
      throw collectorError('OCR_FAILED', 'OCR failed for ' + requestUrl + ': ' + messageOf(error), {
       status: page.status,
       contentType: page.contentType,
@@ -1057,6 +1061,7 @@ export function createCollector({
    let renderError = null;
    let recipeError = null;
    let ocrInfo = null;
+   let capturedScreenshot = null;
    let ocrError = null;
    let values = null;
 
@@ -1066,11 +1071,12 @@ export function createCollector({
     try {
      const rendered = await renderWithBrowser(finalUrl, {
       signal,
-      screenshot: Boolean(ocr?.configured),
+      screenshot: captureArtifacts || Boolean(ocr?.configured),
       ocrImages: Boolean(ocr?.configured),
       maxImages: Math.max(1, Number(process.env.OCR_MAX_EMBEDDED_IMAGES) || 2),
      });
      if (rendered?.html) {
+      if(captureArtifacts&&rendered.image)capturedScreenshot=rendered.image;
       const renderedReadable = extractReadable(rendered.html, {url: rendered.finalUrl ?? finalUrl});
       if (renderedReadable.text.length > text.length) {
        title = renderedReadable.title || title;
@@ -1150,6 +1156,7 @@ export function createCollector({
     fetchedAt: isoNow(),
     robots,
    };
+   if(captureArtifacts&&capturedScreenshot)result.artifact={buffer:capturedScreenshot,mime:'image/png'};
    if (values) result.values = values;
    if (ocrInfo) result.ocr = ocrInfo;
    if (ocrError) result.ocrError = ocrError;
@@ -1188,7 +1195,7 @@ export function createCollector({
  // In-flight de-duplication: two tasks asking for the same page share one fetch
  // (and one robots.txt lookup) instead of doubling load on the source.
  function collect(url, options = {}) {
-  const key = canonicalKey(url);
+  const key = canonicalKey(url)+(options.captureArtifacts?'|capture-artifacts':'');
   const active = collectInflight.get(key);
   if (active) return active;
   const promise = collectOnce(String(url), options).catch(error => failure({

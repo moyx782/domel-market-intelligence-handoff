@@ -15,7 +15,7 @@ import {mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {randomUUID} from 'node:crypto';
 
-export const TASK_KINDS = ['event.discover', 'event.enrich', 'source.collect', 'project.research', 'project.extract'];
+export const TASK_KINDS = ['exhibition.capture', 'exhibition.analyse', 'event.discover', 'event.enrich', 'source.collect', 'project.research', 'project.extract'];
 
 // The queue is polled, not event-driven: 50ms keeps the UI/SSE and tests snappy
 // while never busy-waiting. Retry delays (seconds to minutes) are coarse enough

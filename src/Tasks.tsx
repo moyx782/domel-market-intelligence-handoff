@@ -1,3 +1,4 @@
+import './messages-exhibition';
 import {Fragment,useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {AlertCircle,Ban,Check,Clock,ListChecks,LoaderCircle,RefreshCw,RotateCcw,WifiOff,X} from 'lucide-react';
 import {cancelTask,getTasks,retryTask,streamTasks} from './api';
@@ -6,9 +7,9 @@ import './messages-tasks';
 import type {Role,Task,TaskKind,TaskState,TaskStats} from './types';
 
 const STATES:TaskState[]=['queued','running','succeeded','failed','cancelled'];
-const KINDS:TaskKind[]=['event.discover','event.enrich','source.collect','project.research','project.extract'];
+const KINDS:TaskKind[]=['exhibition.capture','exhibition.analyse','event.discover','event.enrich','source.collect','project.research','project.extract'];
 const STATE_LABELS:Record<TaskState,string>={queued:'Queued',running:'Running',succeeded:'Succeeded',failed:'Failed',cancelled:'Cancelled'};
-const KIND_LABELS:Record<TaskKind,string>={'event.discover':'Event discovery','event.enrich':'Event enrichment','source.collect':'Source collection','project.research':'Project research','project.extract':'Project extraction'};
+const KIND_LABELS:Record<TaskKind,string>={'exhibition.capture':'Exhibition full capture','exhibition.analyse':'Post-collection screening','event.discover':'Event discovery','event.enrich':'Event enrichment','source.collect':'Source collection','project.research':'Project research','project.extract':'Project extraction'};
 
 function errorMessage(cause:unknown){
  return cause instanceof Error?cause.message:String(cause);

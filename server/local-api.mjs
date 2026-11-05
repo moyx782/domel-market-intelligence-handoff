@@ -1,3 +1,4 @@
+import {exhibitionRoutes} from './exhibition-api.mjs';
 // Single-user demo API: no authentication, no Supabase, one local JSON store.
 //
 // It exposes the same routes the frontend already uses, runs research inline
@@ -157,6 +158,7 @@ export function localApiServer({
    try { body = JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { return send(400, {error: 'Invalid JSON'}); }
   }
   try {
+   if(await exhibitionRoutes({path,method:req.method,body,studies:tasks?.exhibitionStudies,queue:tasks?.queue,store,allowed,send}))return;
    if (path === '/api/v1/capabilities' && req.method === 'GET') {
     const policy = sourcePolicy(name => env[name]);
     const llm = llmState();

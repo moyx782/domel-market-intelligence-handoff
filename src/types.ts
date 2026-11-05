@@ -10,7 +10,7 @@ export type Bundle = {projects:Project[];sources:Source[];findings:Finding[];aud
 
 export type Role = 'viewer' | 'user' | 'admin' | 'system';
 export type TaskState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-export type TaskKind = 'event.discover' | 'event.enrich' | 'source.collect' | 'project.research' | 'project.extract';
+export type TaskKind = 'exhibition.capture' | 'exhibition.analyse' | 'event.discover' | 'event.enrich' | 'source.collect' | 'project.research' | 'project.extract';
 export type LogLevel = 'info' | 'warn' | 'error';
 export type TaskLogEntry = {at:string;message:string;level:LogLevel};
 export type Task = {

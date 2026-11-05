@@ -1,0 +1,15 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> domel-market-intelligence@0.1.0 build
+> tsc -b && vite build
+
+vite v6.4.4 building for production...
+transforming...
+✓ 1651 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.59 kB │ gzip:   0.38 kB
+dist/assets/index-WKnf2B99.css   59.66 kB │ gzip:  12.69 kB
+dist/assets/index-Ca8ntpSh.js   462.83 kB │ gzip: 140.79 kB
+✓ built in 2.96s
+

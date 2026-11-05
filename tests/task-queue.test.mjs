@@ -29,7 +29,7 @@ function makeQueue(t, options = {}) {
 }
 
 test('creates, lists, reads and persists queued tasks in the documented shape', async t => {
- assert.deepEqual(TASK_KINDS, ['event.discover', 'event.enrich', 'source.collect', 'project.research', 'project.extract']);
+ assert.deepEqual(TASK_KINDS, ['exhibition.capture', 'exhibition.analyse', 'event.discover', 'event.enrich', 'source.collect', 'project.research', 'project.extract']);
  const {file, queue} = makeQueue(t);
  const task = await queue.create({kind: 'project.research', projectId: 'p1', priority: 2, payload: {mode: 'research'}});
 

@@ -1,3 +1,4 @@
+import {openExhibitionStudies,createExhibitionHandler,createExhibitionAnalysisHandler} from './exhibition-study.mjs';
 // Durable task execution for the local demo.
 //
 // One process hosts the task queue, the source scheduler and every job handler:
@@ -478,7 +479,11 @@ export function createTaskRunner({
   return result;
  }
 
+ const exhibitionStudies=openExhibitionStudies({file:join(dataDir,'exhibition-studies.json'),artifactRoot:join(dataDir,'exhibition-evidence')});
+ const captureExhibition=createExhibitionHandler({studies:exhibitionStudies,collector,getAgentRuntime,getQueue:()=>queue});
  const handlers = {
+  'exhibition.capture':captureExhibition,
+  'exhibition.analyse':createExhibitionAnalysisHandler({studies:exhibitionStudies,getAgentRuntime}),
   'project.research': runQueuedResearch,
   'project.extract': runQueuedResearch,
   'project.agent-research': runAgentResearchTask,
@@ -523,6 +528,7 @@ export function createTaskRunner({
    if (started) return;
    started = true;
    queue.start();
+   for(const study of exhibitionStudies.list())for(const page of study.pages.filter(p=>p.state==='pending'))void queue.create({kind:'exhibition.capture',projectId:study.id,sourceId:page.id,priority:1,payload:{studyId:study.id,pageId:page.id}}).catch(error=>console.error('Exhibition recovery: '+error.message));
    scheduler.start();
   },
   async stop() {
@@ -538,5 +544,6 @@ export function createTaskRunner({
   },
   dataDir: dirname(queueFile),
   sourceMinIntervalMs: SOURCE_MIN_INTERVAL_MS,
+  exhibitionStudies,
  };
 }

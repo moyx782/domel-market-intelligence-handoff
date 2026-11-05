@@ -1,3 +1,6 @@
+> 本分支新增 **展会全量研究 / Exhibition capture**：展会→全部展商→企业产品→参数与价格，先采集后筛选，保留潜在下游客户与网址证据链。
+> 运行方式、API、覆盖缺口与验收边界见 [docs/EXHIBITION_FULL_CAPTURE.md](docs/EXHIBITION_FULL_CAPTURE.md)。
+
 # Domel Market Intelligence
 
 面向 Domel（多麦机电）的**展会资料聚合与市场研究工作台**：找到相关展会、拿到可核验的
@@ -167,3 +170,4 @@ npm run serve                   # build + 单进程 UI+API；或 docker compose 
 - MCP stdio server / 插件执行任意代码，仅 admin 可安装；视为主机级信任。
 - 展会数据只做可核验事实与来源展示，不提供"推荐参展/不参展"判断；失败/缺失会明确标注。
 - 安全、登录、加密、多用户由后续专项处理，不在本仓库继续扩展。
+
